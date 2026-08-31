@@ -246,6 +246,16 @@ export function useGraphState() {
 
   const selectNode = useCallback((id: string | null) => {
     setSelectedNodeId(id)
+    if (id) {
+      setCollapsedNodeIds((prev) => {
+        if (prev.has(id)) {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        }
+        return prev
+      })
+    }
   }, [])
 
   const toggleCollapse = useCallback((id: string) => {

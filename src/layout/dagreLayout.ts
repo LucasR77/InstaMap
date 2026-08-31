@@ -219,7 +219,9 @@ function getBilateralLayout(
           label: node.label,
           content: node.content,
           level: node.level,
-          hasContent: Boolean(node.content && node.content.trim().length > 0),
+          hasContent: Boolean(
+            (node.content && node.content.trim().length > 0) || node.children.length > 0
+          ),
           wordCount: node.wordCount,
           readingTimeMinutes: node.readingTimeMinutes,
           parentId: node.parentId,
@@ -243,8 +245,10 @@ function getBilateralLayout(
 
       // Add Edge from parent to this node
       if (parentNode) {
+        const isChildOfSelected = selectedNodeId === parentNode.id
         const isEdgeHighlighted =
-          highlightedNodeIds.has(parentNode.id) && highlightedNodeIds.has(node.id)
+          (highlightedNodeIds.has(parentNode.id) && highlightedNodeIds.has(node.id)) ||
+          isChildOfSelected
         const isEdgeDimmed = highlightedNodeIds.size > 0 && !isEdgeHighlighted
 
         edges.push({

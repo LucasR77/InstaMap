@@ -131,6 +131,7 @@ export function App() {
           nodeMap={nodeMap}
           isOpen={Boolean(selectedNodeId && selectedNode)}
           isMastered={Boolean(selectedNodeId && masteredNodeIds.has(selectedNodeId))}
+          masteredNodeIds={masteredNodeIds}
           onClose={() => selectNode(null)}
           onToggleMastered={toggleMastered}
           onSaveNode={updateNodeContent}
