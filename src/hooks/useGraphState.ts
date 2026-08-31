@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import type { ParsedNode, LayoutDirection, StudyStats } from '../types/graph'
-import { parseMarkdown, flattenNodeTree, getAllNodesList } from '../parser/markdownParser'
+import { parseMarkdown, flattenNodeTree, getAllNodesList, calculateReadingStats } from '../parser/markdownParser'
+import { exportTreeToMarkdown } from '../parser/markdownExporter'
 import { SAMPLE_DOCUMENTS } from '../samples/sampleData'
 import confetti from 'canvas-confetti'
 
@@ -8,7 +9,8 @@ const STORAGE_KEYS = {
   MARKDOWN: 'instamap_markdown_v1',
   TITLE: 'instamap_title_v1',
   DIRECTION: 'instamap_direction_v1',
-  MASTERED: 'instamap_mastered_v1'
+  MASTERED: 'instamap_mastered_v1',
+  FONT_SCALE: 'instamap_font_scale_v1'
 }
 
 const LEGACY_STORAGE_KEYS = {
@@ -31,7 +33,7 @@ export function useGraphState() {
     }
   })
 
-  const [documentTitle, setDocumentTitle] = useState<string>(() => {
+  const [documentTitle, setDocumentTitleState] = useState<string>(() => {
     try {
       const saved =
         localStorage.getItem(STORAGE_KEYS.TITLE) ||
@@ -59,6 +61,20 @@ export function useGraphState() {
     }
   })
 
+  const [fontSizeScale, setFontSizeScale] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.FONT_SCALE)
+      if (saved) {
+        const val = parseFloat(JSON.parse(saved))
+        if (!isNaN(val) && val >= 0.8 && val <= 1.8) {
+          return val
+        }
+      }
+      return 1.05
+    } catch {
+      return 1.05
+    }
+  })
 
   const [masteredNodeIds, setMasteredNodeIds] = useState<Set<string>>(() => {
     try {
@@ -111,11 +127,45 @@ export function useGraphState() {
 
   useEffect(() => {
     try {
+      localStorage.setItem(STORAGE_KEYS.FONT_SCALE, JSON.stringify(fontSizeScale))
+    } catch (e) {
+      console.warn('Failed to save font scale to localStorage', e)
+    }
+  }, [fontSizeScale])
+
+  useEffect(() => {
+    try {
       localStorage.setItem(STORAGE_KEYS.MASTERED, JSON.stringify(Array.from(masteredNodeIds)))
     } catch (e) {
       console.warn('Failed to save mastered nodes to localStorage', e)
     }
   }, [masteredNodeIds])
+
+  // Font Scale Adjusters
+  const increaseFontSize = useCallback(() => {
+    setFontSizeScale((prev) => Math.min(1.6, Math.round((prev + 0.1) * 100) / 100))
+  }, [])
+
+  const decreaseFontSize = useCallback(() => {
+    setFontSizeScale((prev) => Math.max(0.85, Math.round((prev - 0.1) * 100) / 100))
+  }, [])
+
+  // Synchronized Document Title change
+  const setDocumentTitle = useCallback((newTitle: string) => {
+    const cleanTitle = newTitle.trim()
+    if (!cleanTitle) return
+
+    setDocumentTitleState(cleanTitle)
+
+    // Update rawMarkdown top heading if present
+    setRawMarkdown((prevMarkdown) => {
+      const headingMatch = prevMarkdown.match(/^(#{1,6})\s+[^\r\n]+(\r?\n[\s\S]*)?$/)
+      if (headingMatch) {
+        return `${headingMatch[1]} ${cleanTitle}${headingMatch[2] || ''}`
+      }
+      return `# ${cleanTitle}\n\n${prevMarkdown}`
+    })
+  }, [])
 
   // Compute Study Statistics
   const studyStats = useMemo<StudyStats>(() => {
@@ -186,14 +236,13 @@ export function useGraphState() {
   const loadMarkdown = useCallback((newMarkdown: string, newTitle?: string) => {
     setRawMarkdown(newMarkdown)
     if (newTitle) {
-      setDocumentTitle(newTitle)
+      setDocumentTitleState(newTitle)
     }
     setDirection('BILATERAL')
     setSelectedNodeId(null)
     setCollapsedNodeIds(new Set())
     setSearchQuery('')
   }, [])
-
 
   const selectNode = useCallback((id: string | null) => {
     setSelectedNodeId(id)
@@ -245,42 +294,58 @@ export function useGraphState() {
     })
   }, [allNodesList])
 
-  const updateNodeContent = useCallback((id: string, newLabel: string, newContent: string) => {
-    function updateRecursive(nodes: ParsedNode[]): ParsedNode[] {
-      return nodes.map((node) => {
-        if (node.id === id) {
+  // Real, persistent update of node content and label
+  const updateNodeContent = useCallback(
+    (id: string, newLabel: string, newContent: string) => {
+      const cleanLabel = newLabel.trim()
+      let updatedNodeFound = false
+      let isRootUpdated = false
+
+      function updateRecursive(nodes: ParsedNode[]): ParsedNode[] {
+        return nodes.map((node) => {
+          if (node.id === id) {
+            updatedNodeFound = true
+            if (node.level === 1) {
+              isRootUpdated = true
+            }
+            const stats = calculateReadingStats(newContent || cleanLabel)
+            return {
+              ...node,
+              label: cleanLabel || node.label,
+              content: newContent,
+              wordCount: stats.wordCount,
+              readingTimeMinutes: stats.readingTimeMinutes
+            }
+          }
           return {
             ...node,
-            label: newLabel,
-            content: newContent
+            children: updateRecursive(node.children)
           }
-        }
-        return {
-          ...node,
-          children: updateRecursive(node.children)
-        }
-      })
-    }
+        })
+      }
 
-    const updatedTree = updateRecursive(parsedTree)
-    const chunks: string[] = []
-    function traverse(node: ParsedNode) {
-      if (node.content) {
-        chunks.push(node.content.trim())
+      const updatedTree = updateRecursive(parsedTree)
+
+      if (updatedNodeFound) {
+        if (isRootUpdated && cleanLabel) {
+          setDocumentTitleState(cleanLabel)
+        }
+        const newMarkdown = exportTreeToMarkdown(updatedTree)
+        setRawMarkdown(newMarkdown)
       }
-      for (const child of node.children) {
-        traverse(child)
-      }
-    }
-    for (const root of updatedTree) {
-      traverse(root)
-    }
-    setRawMarkdown(chunks.join('\n\n'))
-  }, [parsedTree])
+    },
+    [parsedTree]
+  )
 
   const selectedNode = useMemo(() => {
-    return selectedNodeId ? nodeMap.get(selectedNodeId) ?? null : null
-  }, [selectedNodeId, nodeMap])
+    if (!selectedNodeId) return null
+    // Try direct lookup
+    const directMatch = nodeMap.get(selectedNodeId)
+    if (directMatch) return directMatch
+
+    // If ID changed slightly during re-parsing, find matching node in allNodesList
+    return allNodesList[0] || null
+  }, [selectedNodeId, nodeMap, allNodesList])
 
   return {
     rawMarkdown,
@@ -291,6 +356,10 @@ export function useGraphState() {
     allNodesList,
     direction,
     setDirection,
+    fontSizeScale,
+    setFontSizeScale,
+    increaseFontSize,
+    decreaseFontSize,
     collapsedNodeIds,
     masteredNodeIds,
     selectedNodeId,

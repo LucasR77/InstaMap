@@ -24,6 +24,9 @@ const nodeTypes = {
 interface InteractiveGraphProps {
   parsedTree: ParsedNode[]
   direction: LayoutDirection
+  fontSizeScale?: number
+  onIncreaseFontSize?: () => void
+  onDecreaseFontSize?: () => void
   collapsedNodeIds: Set<string>
   masteredNodeIds: Set<string>
   selectedNodeId: string | null
@@ -38,6 +41,9 @@ interface InteractiveGraphProps {
 export const InteractiveGraphContent: React.FC<InteractiveGraphProps> = ({
   parsedTree,
   direction,
+  fontSizeScale = 1.05,
+  onIncreaseFontSize,
+  onDecreaseFontSize,
   collapsedNodeIds,
   masteredNodeIds,
   selectedNodeId,
@@ -48,13 +54,13 @@ export const InteractiveGraphContent: React.FC<InteractiveGraphProps> = ({
   onExpandAll,
   onCollapseAll
 }) => {
-
   const { fitView, setCenter } = useReactFlow()
 
-  // Calculate layouted nodes and edges
+  // Calculate layouted nodes and edges with dynamic font scaling
   const { layoutedNodes, layoutedEdges } = useMemo(() => {
     const { nodes, edges } = getLayoutedElements(parsedTree, {
       direction,
+      fontSizeScale,
       collapsedNodeIds,
       masteredNodeIds,
       selectedNodeId,
@@ -67,6 +73,7 @@ export const InteractiveGraphContent: React.FC<InteractiveGraphProps> = ({
   }, [
     parsedTree,
     direction,
+    fontSizeScale,
     collapsedNodeIds,
     masteredNodeIds,
     selectedNodeId,
@@ -159,10 +166,12 @@ export const InteractiveGraphContent: React.FC<InteractiveGraphProps> = ({
 
       {/* Floating Canvas Controls */}
       <GraphControls
+        fontSizeScale={fontSizeScale}
+        onIncreaseFontSize={onIncreaseFontSize}
+        onDecreaseFontSize={onDecreaseFontSize}
         onExpandAll={onExpandAll}
         onCollapseAll={onCollapseAll}
       />
     </div>
   )
 }
-

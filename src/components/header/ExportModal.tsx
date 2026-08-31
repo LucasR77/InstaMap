@@ -17,13 +17,15 @@ interface ExportModalProps {
   onClose: () => void
   documentTitle: string
   parsedTree: ParsedNode[]
+  onExpandAll?: () => void
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
   onClose,
   documentTitle,
-  parsedTree
+  parsedTree,
+  onExpandAll
 }) => {
   const [loadingType, setLoadingType] = useState<string | null>(null)
   const [successType, setSuccessType] = useState<string | null>(null)
@@ -36,7 +38,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleExportPNG = async () => {
     try {
       setLoadingType('png')
-      await exportCanvasToImage(sanitizeName(documentTitle), 'png')
+      await exportCanvasToImage(sanitizeName(documentTitle), 'png', {
+        onExpandAll,
+        padding: 80,
+        pixelRatio: 2.5
+      })
       setSuccessType('png')
       setTimeout(() => setSuccessType(null), 2500)
     } catch (e) {
@@ -49,7 +55,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleExportSVG = async () => {
     try {
       setLoadingType('svg')
-      await exportCanvasToImage(sanitizeName(documentTitle), 'svg')
+      await exportCanvasToImage(sanitizeName(documentTitle), 'svg', {
+        onExpandAll,
+        padding: 80
+      })
       setSuccessType('svg')
       setTimeout(() => setSuccessType(null), 2500)
     } catch (e) {
@@ -84,7 +93,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-base text-slate-900">Exportar Mapa Conceptual</h3>
-              <p className="text-xs text-slate-500">Elige el formato de descarga deseado</p>
+              <p className="text-xs text-slate-500">100% completo, máxima calidad y sin cortes</p>
             </div>
           </div>
           <button
@@ -103,7 +112,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             type="button"
             onClick={handleExportPNG}
             disabled={Boolean(loadingType)}
-            className="flex flex-col items-start p-3.5 bg-slate-50 hover:bg-indigo-50/60 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-left group shadow-xs"
+            className="flex flex-col items-start p-3.5 bg-slate-50 hover:bg-indigo-50/60 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-left group shadow-xs disabled:opacity-50"
           >
             <div className="flex items-center justify-between w-full mb-2">
               <ImageIcon className="w-5 h-5 text-indigo-600" />
@@ -114,9 +123,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               ) : null}
             </div>
             <span className="font-bold text-xs text-slate-900 group-hover:text-indigo-900">
-              Imagen PNG (2x HD)
+              Imagen PNG (Ultra HD)
             </span>
-            <span className="text-[10px] text-slate-500 mt-0.5">Captura visual del lienzo</span>
+            <span className="text-[10px] text-slate-500 mt-0.5">
+              100% abierto y resolución nítida
+            </span>
           </button>
 
           {/* SVG Export */}
@@ -124,7 +135,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             type="button"
             onClick={handleExportSVG}
             disabled={Boolean(loadingType)}
-            className="flex flex-col items-start p-3.5 bg-slate-50 hover:bg-indigo-50/60 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-left group shadow-xs"
+            className="flex flex-col items-start p-3.5 bg-slate-50 hover:bg-indigo-50/60 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all text-left group shadow-xs disabled:opacity-50"
           >
             <div className="flex items-center justify-between w-full mb-2">
               <ImageIcon className="w-5 h-5 text-emerald-600" />
@@ -153,7 +164,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <span className="font-bold text-xs text-slate-900 group-hover:text-amber-900">
               Markdown (.md)
             </span>
-            <span className="text-[10px] text-slate-500 mt-0.5">Documento de texto actualizado</span>
+            <span className="text-[10px] text-slate-500 mt-0.5">Documento de texto estructurado</span>
           </button>
 
           {/* JSON Export */}
@@ -169,7 +180,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <span className="font-bold text-xs text-slate-900 group-hover:text-cyan-900">
               Estructura JSON
             </span>
-            <span className="text-[10px] text-slate-500 mt-0.5">Grafo estructurado con nodos</span>
+            <span className="text-[10px] text-slate-500 mt-0.5">Árbol de nodos estructurado</span>
           </button>
         </div>
       </div>

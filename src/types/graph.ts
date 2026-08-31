@@ -43,6 +43,8 @@ export interface GraphNodeData extends Record<string, unknown> {
   isHighlighted?: boolean
   isDimmed?: boolean
   isSelected?: boolean
+  fontScale?: number
+  cardWidth?: number
   onToggleCollapse?: (id: string) => void
   onToggleMastered?: (id: string) => void
   onSelectNode?: (id: string) => void

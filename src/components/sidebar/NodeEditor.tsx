@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import type { ParsedNode } from '../../types/graph'
 import { Save, RotateCcw, Check } from 'lucide-react'
 
@@ -12,12 +12,14 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ node, onSave, onCancel }
   const [label, setLabel] = useState(node.label)
   const [content, setContent] = useState(node.content)
   const [savedSuccess, setSavedSuccess] = useState(false)
+  const [prevNodeId, setPrevNodeId] = useState(node.id)
 
-  useEffect(() => {
+  if (node.id !== prevNodeId) {
+    setPrevNodeId(node.id)
     setLabel(node.label)
     setContent(node.content)
     setSavedSuccess(false)
-  }, [node])
+  }
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()

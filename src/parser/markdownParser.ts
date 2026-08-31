@@ -3,7 +3,7 @@ import type { ParsedNode } from '../types/graph'
 /**
  * Calculates word count and estimated reading time
  */
-function calculateReadingStats(text: string): { wordCount: number; readingTimeMinutes: number } {
+export function calculateReadingStats(text: string): { wordCount: number; readingTimeMinutes: number } {
   const clean = text.replace(/```[\s\S]*?```/g, ' ').replace(/[#*_`~>[\]()]/g, ' ')
   const words = clean.trim().split(/\s+/).filter(Boolean)
   const wordCount = words.length

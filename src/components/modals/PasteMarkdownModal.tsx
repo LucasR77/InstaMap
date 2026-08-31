@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { FileCode, X, Sparkles, AlertCircle } from 'lucide-react'
 
 interface PasteMarkdownModalProps {
@@ -16,13 +16,12 @@ export const PasteMarkdownModal: React.FC<PasteMarkdownModalProps> = ({
   const [markdown, setMarkdown] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (isOpen) {
-      setError(null)
-    }
-  }, [isOpen])
-
   if (!isOpen) return null
+
+  const handleClose = () => {
+    setError(null)
+    onClose()
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,7 +32,7 @@ export const PasteMarkdownModal: React.FC<PasteMarkdownModalProps> = ({
 
     const finalTitle = title.trim() || 'Nuevo Mapa Conceptual'
     onMarkdownSubmit(markdown, finalTitle)
-    onClose()
+    handleClose()
   }
 
   return (
@@ -52,7 +51,7 @@ export const PasteMarkdownModal: React.FC<PasteMarkdownModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
           >
             <X className="w-4 h-4" />
@@ -102,7 +101,7 @@ export const PasteMarkdownModal: React.FC<PasteMarkdownModalProps> = ({
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg text-xs"
             >
               Cancelar

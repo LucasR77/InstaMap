@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef } from 'react'
 import { UploadCloud, FileText, X, AlertCircle, ShieldCheck, Loader2, FileCode, FileType2 } from 'lucide-react'
 import { parseDocx } from '../../parser/docxParser'
 
@@ -18,19 +18,17 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Reset modal state whenever modal is opened
-  useEffect(() => {
-    if (isOpen) {
-      setIsProcessing(false)
-      setIsDragging(false)
-      setErrorMessage(null)
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-    }
-  }, [isOpen])
-
   if (!isOpen) return null
+
+  const handleClose = () => {
+    setIsProcessing(false)
+    setIsDragging(false)
+    setErrorMessage(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+    onClose()
+  }
 
   const handleFileProcess = async (file: File) => {
     setErrorMessage(null)
@@ -63,7 +61,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
           fileInputRef.current.value = ''
         }
         onFileLoaded(result.markdown, result.title)
-        onClose()
+        handleClose()
       } else {
         const reader = new FileReader()
         reader.onload = (e) => {
@@ -74,7 +72,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
           const content = e.target?.result as string
           const title = file.name.replace(/\.[^/.]+$/, '')
           onFileLoaded(content, title)
-          onClose()
+          handleClose()
         }
         reader.onerror = () => {
           setErrorMessage('Error al leer el archivo. Intenta de nuevo.')
@@ -131,7 +129,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={isProcessing}
             className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg disabled:opacity-50"
           >
@@ -220,4 +218,3 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     </div>
   )
 }
-

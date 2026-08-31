@@ -19,8 +19,10 @@ export function App() {
     nodeMap,
     allNodesList,
     direction,
+    fontSizeScale,
+    increaseFontSize,
+    decreaseFontSize,
     collapsedNodeIds,
-
     masteredNodeIds,
     selectedNodeId,
     selectedNode,
@@ -79,7 +81,6 @@ export function App() {
   }
 
   return (
-
     <div className="flex flex-col w-screen h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
       {/* Top Header */}
       <AppHeader
@@ -109,8 +110,10 @@ export function App() {
           <InteractiveGraphContent
             parsedTree={parsedTree}
             direction={direction}
+            fontSizeScale={fontSizeScale}
+            onIncreaseFontSize={increaseFontSize}
+            onDecreaseFontSize={decreaseFontSize}
             collapsedNodeIds={collapsedNodeIds}
-
             masteredNodeIds={masteredNodeIds}
             selectedNodeId={selectedNodeId}
             highlightedNodeIds={highlightedNodeIds}
@@ -121,7 +124,6 @@ export function App() {
             onCollapseAll={collapseAll}
           />
         </ReactFlowProvider>
-
 
         {/* Reading and Editing Drawer */}
         <ReadingSidebar
@@ -160,6 +162,7 @@ export function App() {
         onClose={() => setIsExportOpen(false)}
         documentTitle={documentTitle}
         parsedTree={parsedTree}
+        onExpandAll={expandAll}
       />
     </div>
   )
