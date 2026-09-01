@@ -34,46 +34,151 @@ const DOCX_STYLE_MAP: string[] = [
 ]
 
 /**
+ * Converts any HTML <table> elements emitted by Mammoth into clean Markdown tables
+ */
+export function convertHtmlTablesToMarkdown(content: string): string {
+  if (!content || !content.includes('<table')) return content
+
+  return content.replace(/<table[\s\S]*?<\/table>/gi, (tableHtml) => {
+    const rowMatches = tableHtml.match(/<tr[\s\S]*?<\/tr>/gi) || []
+    if (rowMatches.length === 0) return ''
+
+    const rowsData: string[][] = []
+    for (const row of rowMatches) {
+      const cellMatches = row.match(/<(?:td|th)[\s\S]*?<\/(?:td|th)>/gi) || []
+      const cells = cellMatches.map((cell) =>
+        cell
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\\([.\-()+_#*`~[\]])/g, '$1')
+          .replace(/\r?\n/g, ' ')
+          .trim()
+      )
+      if (cells.some((c) => c.length > 0)) {
+        rowsData.push(cells)
+      }
+    }
+
+    if (rowsData.length === 0) return ''
+    const maxCols = Math.max(...rowsData.map((r) => r.length))
+    if (maxCols === 0) return ''
+
+    const normalizedRows = rowsData.map((r) => {
+      const padded = [...r]
+      while (padded.length < maxCols) padded.push('')
+      return padded
+    })
+
+    const header = normalizedRows[0]
+    const separator = Array(maxCols).fill('---')
+    const body = normalizedRows.length > 1 ? normalizedRows.slice(1) : []
+
+    const mdLines = [
+      `| ${header.join(' | ')} |`,
+      `| ${separator.join(' | ')} |`,
+      ...body.map((r) => `| ${r.join(' | ')} |`)
+    ]
+
+    return `\n\n${mdLines.join('\n')}\n\n`
+  })
+}
+
+/**
  * Normalizes raw Markdown emitted by Mammoth:
- * 1. Unescapes overly aggressive backslash escapes (\., \(, \), \-, \+, etc.)
- * 2. Elevates bold numbered paragraphs (e.g., "__1. Título__", "**2.1. Subtítulo**")
- *    into explicit Markdown headings (##, ###) if the author typed bold text instead
- *    of selecting Word's heading style.
- * 3. Cleans up whitespace and empty blocks.
+ * 1. Converts embedded HTML tables to Markdown tables.
+ * 2. Unescapes overly aggressive backslash escapes (\., \(, \), \-, \+, etc.)
+ * 3. Identifies informal headings (numbered outlines, Roman numerals, uppercase titles, standalone bold/italics).
+ * 4. Normalizes lettered lists (a), b)) and paragraph subtitles (_Título_:).
  */
 export function normalizeDocxMarkdown(rawMarkdown: string): string {
   if (!rawMarkdown) return ''
 
-  // 1. Remove unnecessary backslash escapes from mammoth
-  const unescaped = rawMarkdown.replace(/\\([.\-()+_#*`~[\]])/g, '$1')
+  // 1. Convert HTML tables to Markdown tables
+  const tablesConverted = convertHtmlTablesToMarkdown(rawMarkdown)
 
-  // 2. Identify bold numbered headings or isolated bold titles
+  // 2. Remove unnecessary backslash escapes from mammoth
+  const unescaped = tablesConverted.replace(/\\([.\-()+_#*`~[\]:])/g, '$1')
+
+  // 3. Process line by line
   const lines = unescaped.split(/\r?\n/)
   const processedLines: string[] = []
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i].trim()
+    if (!line) {
+      processedLines.push('')
+      continue
+    }
 
-    // Check if line is a bold heading: ^(__|\*\*)(.+)(__|\*\*)$
-    const boldHeadingMatch = line.match(/^(__|\*\*)([^*_]+)(__|\*\*)$/)
-    if (boldHeadingMatch) {
-      const inner = boldHeadingMatch[2].trim()
-      // Check if it starts with a number like "1." or "2.1." or "3.1.2."
-      const numMatch = inner.match(/^(\d+(\.\d+)*)\.?\s+(.+)$/)
-      if (numMatch) {
-        const prefix = numMatch[1]
-        const dotCount = (prefix.match(/\./g) || []).length
-        if (dotCount === 0) {
-          // Level 2 Heading: ## 1. Title
-          line = `## ${inner}`
-        } else if (dotCount === 1) {
-          // Level 3 Heading: ### 2.1. Subtitle
-          line = `### ${inner}`
-        } else {
-          // Level 4 Heading: #### 2.1.1. Sub-sub
-          line = `#### ${inner}`
-        }
+    // Skip lines that are already markdown headings
+    if (line.startsWith('#')) {
+      processedLines.push(line)
+      continue
+    }
+
+    // A. Bold or Italic standalone heading: ^(__|\*\*|_|\*)(.+)\1:?$
+    const boldMatch = line.match(/^(__|\*\*|_|\*)([^*_]{2,120})\1:?$/)
+    const lineToEvaluate = boldMatch ? boldMatch[2].trim() : line
+
+    // B. Formal chapter prefixes: "Capítulo 1", "Tema 2:", "Unidad 3:"
+    const chapterMatch = lineToEvaluate.match(/^(Cap[ií]tulo|Tema|M[oó]dulo|Unidad)\s+([0-9IVXLCDM]+)[:\.\s]\s*(.+)$/i)
+    if (chapterMatch) {
+      processedLines.push(`## ${lineToEvaluate}`)
+      continue
+    }
+
+    // C. Roman numerals: "I. Introducción", "II. Marco Teórico"
+    const romanMatch = lineToEvaluate.match(/^([IVXLCDM]{1,6})\.\s+(.+)$/)
+    if (romanMatch) {
+      processedLines.push(`## ${lineToEvaluate}`)
+      continue
+    }
+
+    // D. Numbered hierarchies: "1.", "1.1", "1.1.2", "2.3.4.1"
+    const numMatch = lineToEvaluate.match(/^(\d+(\.\d+)*)\.?\s+(.+)$/)
+    if (numMatch) {
+      const prefix = numMatch[1]
+      const dotCount = (prefix.match(/\./g) || []).length
+      if (dotCount === 0) {
+        processedLines.push(`## ${lineToEvaluate}`)
+      } else if (dotCount === 1) {
+        processedLines.push(`### ${lineToEvaluate}`)
+      } else {
+        processedLines.push(`#### ${lineToEvaluate}`)
       }
+      continue
+    }
+
+    // E. Standalone bold or italic title if isolated on its line
+    if (boldMatch && lineToEvaluate.length <= 80 && !lineToEvaluate.endsWith('.')) {
+      processedLines.push(`### ${lineToEvaluate}`)
+      continue
+    }
+
+    // F. Standalone all-caps line (e.g. "INTRODUCCIÓN", "MARCO CONCEPTUAL", "CONCLUSIÓN")
+    if (
+      line.length >= 4 &&
+      line.length <= 60 &&
+      line === line.toUpperCase() &&
+      /^[A-ZÁÉÍÓÚÑ0-9\s:/-]+$/.test(line) &&
+      !line.endsWith('.') &&
+      !line.includes('|')
+    ) {
+      processedLines.push(`## ${line}`)
+      continue
+    }
+
+    // G. Lettered sub-bullets: "a) ...", "b) ..." -> "- **a)** ..."
+    const letterMatch = line.match(/^([a-z]\))\s+(.+)$/i)
+    if (letterMatch) {
+      processedLines.push(`- **${letterMatch[1]}** ${letterMatch[2]}`)
+      continue
+    }
+
+    // H. Paragraph italic titles: "_Nota_: detalle" -> "**Nota**: detalle"
+    const italicLeadMatch = line.match(/^(_|\*)([^\n_*]{2,80})\1[:\-—]\s*(.*)$/)
+    if (italicLeadMatch) {
+      processedLines.push(`**${italicLeadMatch[2]}**: ${italicLeadMatch[3]}`)
+      continue
     }
 
     processedLines.push(line)
@@ -110,8 +215,14 @@ export async function parseDocx(
     throw new Error('Formato de entrada no soportado para parseo DOCX')
   }
 
+  const mammothOptions: any = { arrayBuffer }
+  const nodeBuffer = (globalThis as any).Buffer
+  if (nodeBuffer && typeof nodeBuffer.from === 'function') {
+    mammothOptions.buffer = nodeBuffer.from(arrayBuffer)
+  }
+
   const result = await mammoth.convertToMarkdown(
-    { arrayBuffer },
+    mammothOptions,
     {
       styleMap: DOCX_STYLE_MAP,
       includeDefaultStyleMap: true

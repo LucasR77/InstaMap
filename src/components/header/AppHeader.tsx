@@ -8,9 +8,17 @@ import {
   CheckCircle2,
   Edit2,
   Check,
-  GitFork
+  ArrowLeft,
+  Cloud,
+  CloudOff,
+  Loader2,
+  Share2,
+  Layers,
+  LogIn
 } from 'lucide-react'
 import { InstaMapLogo } from '../common/InstaMapLogo'
+import { useAuth } from '../../context/AuthContext'
+import type { SaveStatus } from '../../hooks/useGraphState'
 
 interface AppHeaderProps {
   documentTitle: string
@@ -20,6 +28,12 @@ interface AppHeaderProps {
   onOpenPaste: () => void
   onOpenTemplates: () => void
   onOpenExport: () => void
+  saveStatus?: SaveStatus
+  onBackToDashboard?: () => void
+  onOpenFlashcards?: () => void
+  onOpenShare?: () => void
+  onOpenAuth?: () => void
+  isReadOnly?: boolean
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -29,8 +43,15 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenUpload,
   onOpenPaste,
   onOpenTemplates,
-  onOpenExport
+  onOpenExport,
+  saveStatus = 'local',
+  onBackToDashboard,
+  onOpenFlashcards,
+  onOpenShare,
+  onOpenAuth,
+  isReadOnly = false
 }) => {
+  const { user } = useAuth()
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [tempTitle, setTempTitle] = useState(documentTitle)
 
@@ -42,19 +63,30 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     setIsEditingTitle(false)
   }
 
-
   return (
     <header className="h-14 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-4 flex items-center justify-between gap-4 z-30 select-none shadow-sm">
-      {/* Left: Brand Logo & Document Title */}
+      {/* Left: Dashboard Back / Brand Logo & Document Title */}
       <div className="flex items-center gap-3 min-w-0">
+        {onBackToDashboard && (
+          <button
+            type="button"
+            onClick={onBackToDashboard}
+            title="Volver al Dashboard de mapas y carpetas"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/80 rounded-xl border border-slate-200 transition-colors cursor-pointer shrink-0"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span className="hidden sm:inline">Mis Mapas</span>
+          </button>
+        )}
+
         {/* Brand Logo & Name */}
         <InstaMapLogo size={32} />
 
         <div className="h-4 w-px bg-slate-200 hidden sm:block" />
 
         {/* Editable Title */}
-        <div className="flex items-center gap-1 min-w-0">
-          {isEditingTitle ? (
+        <div className="flex items-center gap-2 min-w-0">
+          {isEditingTitle && !isReadOnly ? (
             <form onSubmit={handleTitleSubmit} className="flex items-center gap-1">
               <input
                 type="text"
@@ -74,16 +106,50 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           ) : (
             <button
               type="button"
+              disabled={isReadOnly}
               onClick={() => {
+                if (isReadOnly) return
                 setTempTitle(documentTitle)
                 setIsEditingTitle(true)
               }}
-              title="Clic para renombrar documento"
-              className="flex items-center gap-1.5 px-2 py-1 hover:bg-slate-100 rounded-lg text-slate-800 transition-colors group truncate max-w-[200px] md:max-w-[280px]"
+              title={isReadOnly ? "Modo solo lectura" : "Clic para renombrar documento"}
+              className="flex items-center gap-1.5 px-2 py-1 hover:bg-slate-100 rounded-lg text-slate-800 transition-colors group truncate max-w-[180px] md:max-w-[240px]"
             >
               <span className="text-xs font-bold truncate text-slate-900">{documentTitle}</span>
-              <Edit2 className="w-3 h-3 text-slate-400 group-hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+              {!isReadOnly && (
+                <Edit2 className="w-3 h-3 text-slate-400 group-hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+              )}
             </button>
+          )}
+
+          {/* Cloud Save Status Indicator */}
+          {saveStatus && (
+            <div className="flex items-center gap-1 text-[11px] font-medium text-slate-500 shrink-0">
+              {saveStatus === 'saved' && (
+                <span className="flex items-center gap-1 text-emerald-600" title="Sincronizado en la nube">
+                  <Cloud className="w-3.5 h-3.5" />
+                  <span className="hidden lg:inline">Guardado</span>
+                </span>
+              )}
+              {saveStatus === 'saving' && (
+                <span className="flex items-center gap-1 text-indigo-600" title="Guardando cambios...">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span className="hidden lg:inline">Guardando...</span>
+                </span>
+              )}
+              {saveStatus === 'local' && (
+                <span className="flex items-center gap-1 text-slate-400" title="Guardado local (Invitado)">
+                  <CloudOff className="w-3.5 h-3.5" />
+                  <span className="hidden lg:inline">Local</span>
+                </span>
+              )}
+              {saveStatus === 'error' && (
+                <span className="flex items-center gap-1 text-rose-600" title="Error de sincronización">
+                  <CloudOff className="w-3.5 h-3.5" />
+                  <span className="hidden lg:inline">Error al guardar</span>
+                </span>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -152,28 +218,56 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <span className="hidden lg:inline">Plantillas</span>
         </button>
 
-        {/* Radial Mindmap Badge */}
-        <div
-          title="Modo Radial Mindmap activo"
-          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-amber-50 border border-amber-200 text-amber-900 rounded-xl shadow-xs select-none"
-        >
-          <GitFork className="w-3.5 h-3.5 text-amber-700 rotate-90" />
-          <span>Radial</span>
-        </div>
+        {/* Flashcards Study Button */}
+        {onOpenFlashcards && (
+          <button
+            type="button"
+            onClick={onOpenFlashcards}
+            title="Repasar conceptos del mapa en modo Flashcards"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-900 rounded-xl transition-all shadow-xs cursor-pointer"
+          >
+            <Layers className="w-3.5 h-3.5 text-amber-600" />
+            <span className="hidden md:inline">Flashcards</span>
+          </button>
+        )}
+
+        {/* Share Button */}
+        {onOpenShare && (
+          <button
+            type="button"
+            onClick={onOpenShare}
+            title="Compartir enlace público de solo lectura"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl transition-all shadow-xs cursor-pointer"
+          >
+            <Share2 className="w-3.5 h-3.5 text-sky-600" />
+            <span className="hidden sm:inline">Compartir</span>
+          </button>
+        )}
 
         <div className="h-4 w-px bg-slate-200 mx-0.5" />
-
 
         {/* Export Button */}
         <button
           type="button"
           onClick={onOpenExport}
           title="Exportar mapa a imagen PNG, SVG, Markdown o JSON"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md shadow-indigo-600/20 transition-all"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
         >
           <Download className="w-3.5 h-3.5" />
           <span>Exportar</span>
         </button>
+
+        {/* Login Button for guests */}
+        {!user && onOpenAuth && (
+          <button
+            type="button"
+            onClick={onOpenAuth}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-xl shadow-sm transition-all cursor-pointer ml-1"
+          >
+            <LogIn className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Iniciar Sesión</span>
+          </button>
+        )}
       </div>
     </header>
   )

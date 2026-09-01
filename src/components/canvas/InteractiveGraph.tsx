@@ -36,6 +36,7 @@ interface InteractiveGraphProps {
   onToggleMastered: (id: string) => void
   onExpandAll: () => void
   onCollapseAll: () => void
+  onAddNewNode?: (parentId?: string) => void
 }
 
 export const InteractiveGraphContent: React.FC<InteractiveGraphProps> = ({
@@ -52,7 +53,8 @@ export const InteractiveGraphContent: React.FC<InteractiveGraphProps> = ({
   onToggleCollapse,
   onToggleMastered,
   onExpandAll,
-  onCollapseAll
+  onCollapseAll,
+  onAddNewNode
 }) => {
   const { fitView, setCenter } = useReactFlow()
 
@@ -171,6 +173,8 @@ export const InteractiveGraphContent: React.FC<InteractiveGraphProps> = ({
         onDecreaseFontSize={onDecreaseFontSize}
         onExpandAll={onExpandAll}
         onCollapseAll={onCollapseAll}
+        onAddNewNode={() => onAddNewNode?.(selectedNodeId || undefined)}
+        hasSelectedNode={Boolean(selectedNodeId)}
       />
     </div>
   )

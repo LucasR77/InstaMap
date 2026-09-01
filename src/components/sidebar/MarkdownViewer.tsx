@@ -5,6 +5,7 @@ import rehypeHighlight from 'rehype-highlight'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { Copy, Check } from 'lucide-react'
+import { normalizeMarkdownForDisplay } from '../../utils/textNormalization'
 
 interface MarkdownViewerProps {
   content: string
@@ -26,6 +27,8 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content }) => {
       </div>
     )
   }
+
+  const normalizedContent = normalizeMarkdownForDisplay(content)
 
   return (
     <div className="prose prose-slate prose-sm max-w-none space-y-3.5 text-slate-700 leading-relaxed">
@@ -131,7 +134,7 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content }) => {
           }
         }}
       >
-        {content}
+        {normalizedContent}
       </ReactMarkdown>
     </div>
   )

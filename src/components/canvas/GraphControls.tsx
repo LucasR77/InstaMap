@@ -7,7 +7,8 @@ import {
   Minimize2,
   Expand,
   GitFork,
-  Type
+  Type,
+  Plus
 } from 'lucide-react'
 
 interface GraphControlsProps {
@@ -16,6 +17,8 @@ interface GraphControlsProps {
   onDecreaseFontSize?: () => void
   onExpandAll: () => void
   onCollapseAll: () => void
+  onAddNewNode?: () => void
+  hasSelectedNode?: boolean
 }
 
 export const GraphControls: React.FC<GraphControlsProps> = ({
@@ -23,7 +26,9 @@ export const GraphControls: React.FC<GraphControlsProps> = ({
   onIncreaseFontSize,
   onDecreaseFontSize,
   onExpandAll,
-  onCollapseAll
+  onCollapseAll,
+  onAddNewNode,
+  hasSelectedNode = false
 }) => {
   const { zoomIn, zoomOut, fitView } = useReactFlow()
 
@@ -31,6 +36,21 @@ export const GraphControls: React.FC<GraphControlsProps> = ({
 
   return (
     <div className="absolute bottom-6 left-6 z-20 flex flex-wrap items-center gap-1.5 p-1.5 bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl shadow-xl shadow-slate-900/5 text-slate-700 select-none">
+      {/* Add Node Button */}
+      {onAddNewNode && (
+        <button
+          type="button"
+          onClick={onAddNewNode}
+          title={hasSelectedNode ? "Agregar subnodo hijo al concepto seleccionado" : "Agregar una nueva rama principal al mapa"}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-lg transition-colors cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>{hasSelectedNode ? '+ Subnodo' : '+ Nueva Rama'}</span>
+        </button>
+      )}
+
+      {onAddNewNode && <div className="h-4 w-px bg-slate-200" />}
+
       {/* Radial Mindmap Indicator */}
       <div
         title="Distribución Radial Mindmap activa"

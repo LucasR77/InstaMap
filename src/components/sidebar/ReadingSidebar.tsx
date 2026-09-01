@@ -28,6 +28,8 @@ interface ReadingSidebarProps {
   onToggleMastered: (id: string) => void
   onSaveNode: (id: string, newLabel: string, newContent: string) => void
   onSelectNode: (id: string) => void
+  onAddChild?: (parentId: string) => void
+  onDeleteNode?: (nodeId: string) => void
 }
 
 /**
@@ -209,7 +211,9 @@ export const ReadingSidebar: React.FC<ReadingSidebarProps> = ({
   onClose,
   onToggleMastered,
   onSaveNode,
-  onSelectNode
+  onSelectNode,
+  onAddChild,
+  onDeleteNode
 }) => {
   const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview')
   const [subnodesViewMode, setSubnodesViewMode] = useState<'cards' | 'continuous'>('cards')
@@ -330,21 +334,34 @@ export const ReadingSidebar: React.FC<ReadingSidebarProps> = ({
             </button>
           </div>
 
-          {/* Mastery Button */}
-          <button
-            type="button"
-            onClick={() => onToggleMastered(node.id)}
-            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
-              isMastered
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 shadow-xs'
-                : 'bg-white text-slate-700 border-slate-300 hover:border-emerald-500 hover:text-emerald-700'
-            }`}
-          >
-            <CheckCircle2
-              className={`w-3.5 h-3.5 ${isMastered ? 'fill-emerald-200 text-emerald-600' : ''}`}
-            />
-            <span>{isMastered ? 'Dominado' : 'Marcar Aprendido'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {onAddChild && (
+              <button
+                type="button"
+                onClick={() => onAddChild(node.id)}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors cursor-pointer"
+                title="Agregar un nuevo subnodo a este concepto"
+              >
+                <span>+ Subnodo</span>
+              </button>
+            )}
+
+            {/* Mastery Button */}
+            <button
+              type="button"
+              onClick={() => onToggleMastered(node.id)}
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                isMastered
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 shadow-xs'
+                  : 'bg-white text-slate-700 border-slate-300 hover:border-emerald-500 hover:text-emerald-700'
+              }`}
+            >
+              <CheckCircle2
+                className={`w-3.5 h-3.5 ${isMastered ? 'fill-emerald-200 text-emerald-600' : ''}`}
+              />
+              <span>{isMastered ? 'Dominado' : 'Marcar Aprendido'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -440,6 +457,8 @@ export const ReadingSidebar: React.FC<ReadingSidebarProps> = ({
                 setActiveTab('preview')
               }}
               onCancel={() => setActiveTab('preview')}
+              onAddChild={onAddChild}
+              onDelete={onDeleteNode}
             />
 
             {/* Quick links to edit child nodes directly */}

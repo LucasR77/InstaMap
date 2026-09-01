@@ -1,8 +1,9 @@
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import type { ParsedNode, LayoutDirection, StudyStats } from '../types/graph'
 import { parseMarkdown, flattenNodeTree, getAllNodesList, calculateReadingStats } from '../parser/markdownParser'
 import { exportTreeToMarkdown } from '../parser/markdownExporter'
 import { SAMPLE_DOCUMENTS } from '../samples/sampleData'
+import { supabase, isSupabaseConfigured, type DbMap } from '../lib/supabase'
 import confetti from 'canvas-confetti'
 
 const STORAGE_KEYS = {
@@ -20,9 +21,15 @@ const LEGACY_STORAGE_KEYS = {
   MASTERED: 'nodeflow_study_mastered_v2'
 }
 
-export function useGraphState() {
+export type SaveStatus = 'saved' | 'saving' | 'local' | 'error'
+
+export function useGraphState(initialMap?: DbMap | null) {
+  const [currentMapId, setCurrentMapId] = useState<string | null>(initialMap ? initialMap.id : null)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>(initialMap ? 'saved' : 'local')
+
   // Load initial document from sample or localStorage
   const [rawMarkdown, setRawMarkdown] = useState<string>(() => {
+    if (initialMap) return initialMap.raw_markdown
     try {
       const saved =
         localStorage.getItem(STORAGE_KEYS.MARKDOWN) ||
@@ -34,6 +41,7 @@ export function useGraphState() {
   })
 
   const [documentTitle, setDocumentTitleState] = useState<string>(() => {
+    if (initialMap) return initialMap.title
     try {
       const saved =
         localStorage.getItem(STORAGE_KEYS.TITLE) ||
@@ -347,6 +355,183 @@ export function useGraphState() {
     [parsedTree]
   )
 
+  // Add new node (child or root branch)
+  const addNewNode = useCallback(
+    (parentId?: string, initialLabel = 'Nuevo Concepto', initialContent = '') => {
+      const newId = `node-${Date.now()}-custom`
+
+      function addRecursive(nodes: ParsedNode[]): { updated: ParsedNode[]; addedNode: ParsedNode | null } {
+        let added: ParsedNode | null = null
+
+        const updated = nodes.map((node) => {
+          if (node.id === parentId) {
+            const childLevel = Math.min(6, node.level + 1)
+            const newNode: ParsedNode = {
+              id: newId,
+              label: initialLabel,
+              level: childLevel,
+              content: initialContent || (childLevel <= 3 ? `### ${initialLabel}` : `- **${initialLabel}**: `),
+              parentId: node.id,
+              children: [],
+              wordCount: calculateReadingStats(initialContent || initialLabel).wordCount,
+              readingTimeMinutes: 1,
+              islandIndex: node.islandIndex,
+              isLeaf: true
+            }
+            added = newNode
+            return {
+              ...node,
+              isLeaf: false,
+              children: [...node.children, newNode]
+            }
+          }
+
+          const childResult = addRecursive(node.children)
+          if (childResult.addedNode) {
+            added = childResult.addedNode
+            return {
+              ...node,
+              children: childResult.updated
+            }
+          }
+
+          return node
+        })
+
+        return { updated, addedNode: added }
+      }
+
+      let newTree: ParsedNode[] = []
+      let createdNode: ParsedNode | null = null
+
+      if (!parentId || parentId === parsedTree[0]?.id) {
+        // Add to main root
+        const root = parsedTree[0]
+        const newNode: ParsedNode = {
+          id: newId,
+          label: initialLabel,
+          level: 2,
+          content: initialContent || `## ${initialLabel}`,
+          parentId: root?.id || null,
+          children: [],
+          wordCount: calculateReadingStats(initialContent || initialLabel).wordCount,
+          readingTimeMinutes: 1,
+          islandIndex: 0,
+          isLeaf: false
+        }
+        createdNode = newNode
+
+        if (root) {
+          newTree = [
+            {
+              ...root,
+              children: [...root.children, newNode]
+            }
+          ]
+        } else {
+          newTree = [newNode]
+        }
+      } else {
+        const res = addRecursive(parsedTree)
+        newTree = res.updated
+        createdNode = res.addedNode
+      }
+
+      const newMarkdown = exportTreeToMarkdown(newTree)
+      setRawMarkdown(newMarkdown)
+
+      if (createdNode) {
+        setSelectedNodeId(createdNode.id)
+      }
+    },
+    [parsedTree]
+  )
+
+  // Delete node and its subtree
+  const deleteNode = useCallback(
+    (nodeId: string) => {
+      // Don't allow deleting root node
+      if (parsedTree[0]?.id === nodeId) return
+
+      function deleteRecursive(nodes: ParsedNode[]): ParsedNode[] {
+        return nodes
+          .filter((node) => node.id !== nodeId)
+          .map((node) => ({
+            ...node,
+            children: deleteRecursive(node.children)
+          }))
+      }
+
+      const updatedTree = deleteRecursive(parsedTree)
+      const newMarkdown = exportTreeToMarkdown(updatedTree)
+      setRawMarkdown(newMarkdown)
+
+      if (selectedNodeId === nodeId) {
+        setSelectedNodeId(null)
+      }
+    },
+    [parsedTree, selectedNodeId]
+  )
+
+  // Load from Supabase DB Map
+  const loadFromDbMap = useCallback((map: DbMap) => {
+    setCurrentMapId(map.id)
+    setDocumentTitleState(map.title)
+    setRawMarkdown(map.raw_markdown)
+    if (map.layout_direction) {
+      setDirection(map.layout_direction)
+    }
+    if (Array.isArray(map.mastered_node_ids)) {
+      setMasteredNodeIds(new Set(map.mastered_node_ids))
+    }
+    setSelectedNodeId(null)
+    setCollapsedNodeIds(new Set())
+    setSearchQuery('')
+    setSaveStatus('saved')
+  }, [])
+
+  // Auto-save debounce effect to Supabase
+  const isInitialMount = useRef(true)
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      return
+    }
+
+    if (!currentMapId || !isSupabaseConfigured) {
+      setSaveStatus('local')
+      return
+    }
+
+    setSaveStatus('saving')
+    const timer = setTimeout(async () => {
+      try {
+        const { error } = await supabase
+          .from('maps')
+          .update({
+            title: documentTitle,
+            raw_markdown: rawMarkdown,
+            layout_direction: direction,
+            mastered_node_ids: Array.from(masteredNodeIds),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', currentMapId)
+
+        if (!error) {
+          setSaveStatus('saved')
+        } else {
+          console.error('Supabase auto-save error:', error)
+          setSaveStatus('error')
+        }
+      } catch (err) {
+        console.error('Supabase auto-save exception:', err)
+        setSaveStatus('error')
+      }
+    }, 800)
+
+    return () => clearTimeout(timer)
+  }, [currentMapId, rawMarkdown, documentTitle, direction, masteredNodeIds])
+
   const selectedNode = useMemo(() => {
     if (!selectedNodeId) return null
     // Try direct lookup
@@ -379,6 +564,12 @@ export function useGraphState() {
     highlightedNodeIds,
     studyStats,
     loadMarkdown,
+    loadFromDbMap,
+    currentMapId,
+    setCurrentMapId,
+    saveStatus,
+    addNewNode,
+    deleteNode,
     selectNode,
     toggleCollapse,
     expandAll,

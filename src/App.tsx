@@ -9,9 +9,16 @@ import { FileUploadModal } from './components/modals/FileUploadModal'
 import { PasteMarkdownModal } from './components/modals/PasteMarkdownModal'
 import { TemplatesModal } from './components/modals/TemplatesModal'
 import { ExportModal } from './components/header/ExportModal'
+import { AuthModal } from './components/auth/AuthModal'
+import { DashboardView } from './components/dashboard/DashboardView'
+import { FlashcardsModal } from './components/study/FlashcardsModal'
+import { ShareModal } from './components/share/ShareModal'
+import { AuthProvider, useAuth } from './context/AuthContext'
+import { supabase, type DbMap } from './lib/supabase'
 import type { SampleDocument } from './samples/sampleData'
 
-export function App() {
+function AppContent() {
+  const { user, loading: authLoading } = useAuth()
   const {
     documentTitle,
     setDocumentTitle,
@@ -31,6 +38,11 @@ export function App() {
     highlightedNodeIds,
     studyStats,
     loadMarkdown,
+    loadFromDbMap,
+    currentMapId,
+    saveStatus,
+    addNewNode,
+    deleteNode,
     selectNode,
     toggleCollapse,
     expandAll,
@@ -39,11 +51,47 @@ export function App() {
     updateNodeContent
   } = useGraphState()
 
+  // Current view state
+  const [view, setView] = useState<'dashboard' | 'editor'>('editor')
+  const [isReadOnly, setIsReadOnly] = useState(false)
+  const [activeShareMap, setActiveShareMap] = useState<DbMap | null>(null)
+
   // Modals state
   const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [isPasteOpen, setIsPasteOpen] = useState(false)
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false)
   const [isExportOpen, setIsExportOpen] = useState(false)
+  const [isAuthOpen, setIsAuthOpen] = useState(false)
+  const [isFlashcardsOpen, setIsFlashcardsOpen] = useState(false)
+  const [isShareOpen, setIsShareOpen] = useState(false)
+
+  // Detect shared map in URL (?share=<id>)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const shareId = params.get('share')
+    if (shareId) {
+      supabase
+        .from('maps')
+        .select('*')
+        .eq('id', shareId)
+        .single()
+        .then(({ data, error }) => {
+          if (!error && data) {
+            loadFromDbMap(data as DbMap)
+            setIsReadOnly(true)
+            setView('editor')
+          }
+        })
+    }
+  }, [loadFromDbMap])
+
+  // If user is authenticated on initial load, navigate to dashboard
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (!params.get('share') && user && !currentMapId) {
+      setView('dashboard')
+    }
+  }, [user, currentMapId])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -53,6 +101,9 @@ export function App() {
         else if (isPasteOpen) setIsPasteOpen(false)
         else if (isTemplatesOpen) setIsTemplatesOpen(false)
         else if (isExportOpen) setIsExportOpen(false)
+        else if (isAuthOpen) setIsAuthOpen(false)
+        else if (isFlashcardsOpen) setIsFlashcardsOpen(false)
+        else if (isShareOpen) setIsShareOpen(false)
         else if (selectedNodeId) selectNode(null)
       }
     }
@@ -64,24 +115,87 @@ export function App() {
     isPasteOpen,
     isTemplatesOpen,
     isExportOpen,
+    isAuthOpen,
+    isFlashcardsOpen,
+    isShareOpen,
     selectedNodeId,
     selectNode
   ])
 
   const handleTemplateSelect = (template: SampleDocument) => {
     loadMarkdown(template.markdown, template.title)
+    setView('editor')
   }
 
   const handleFileLoaded = (markdown: string, title: string) => {
     loadMarkdown(markdown, title)
+    setView('editor')
   }
 
   const handleMarkdownSubmit = (markdown: string, title: string) => {
     loadMarkdown(markdown, title)
+    setView('editor')
+  }
+
+  // Handle map selection from Dashboard
+  const handleOpenMapFromDashboard = (map: DbMap) => {
+    loadFromDbMap(map)
+    setIsReadOnly(false)
+    setView('editor')
+  }
+
+  // Handle share modal trigger from dashboard
+  const handleOpenShareFromDashboard = (map: DbMap) => {
+    setActiveShareMap(map)
+    setIsShareOpen(true)
+  }
+
+  // Current active map for share modal
+  const currentDbMapForShare: DbMap | null = activeShareMap || (currentMapId ? {
+    id: currentMapId,
+    user_id: user?.id || '',
+    folder_id: null,
+    title: documentTitle,
+    raw_markdown: '',
+    mastered_node_ids: Array.from(masteredNodeIds),
+    layout_direction: direction,
+    is_public: false,
+    share_slug: null,
+    created_at: '',
+    updated_at: ''
+  } : null)
+
+  if (authLoading) {
+    return (
+      <div className="flex w-screen h-screen items-center justify-center bg-[#faf9f6] text-slate-600">
+        <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    )
+  }
+
+  // If view is dashboard and user is logged in
+  if (view === 'dashboard' && user) {
+    return (
+      <>
+        <DashboardView
+          onOpenMap={handleOpenMapFromDashboard}
+          onNewLocalMap={() => setView('editor')}
+          onOpenShareModal={handleOpenShareFromDashboard}
+        />
+        <ShareModal
+          isOpen={isShareOpen}
+          onClose={() => {
+            setIsShareOpen(false)
+            setActiveShareMap(null)
+          }}
+          map={currentDbMapForShare}
+        />
+      </>
+    )
   }
 
   return (
-    <div className="flex flex-col w-screen h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+    <div className="flex flex-col w-screen h-screen bg-[#faf9f6] text-slate-900 overflow-hidden font-sans">
       {/* Top Header */}
       <AppHeader
         documentTitle={documentTitle}
@@ -91,6 +205,12 @@ export function App() {
         onOpenPaste={() => setIsPasteOpen(true)}
         onOpenTemplates={() => setIsTemplatesOpen(true)}
         onOpenExport={() => setIsExportOpen(true)}
+        saveStatus={saveStatus}
+        onBackToDashboard={user ? () => setView('dashboard') : undefined}
+        onOpenFlashcards={() => setIsFlashcardsOpen(true)}
+        onOpenShare={currentMapId ? () => setIsShareOpen(true) : undefined}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        isReadOnly={isReadOnly}
       />
 
       {/* Main Canvas Area */}
@@ -122,6 +242,7 @@ export function App() {
             onToggleMastered={toggleMastered}
             onExpandAll={expandAll}
             onCollapseAll={collapseAll}
+            onAddNewNode={isReadOnly ? undefined : (parentId) => addNewNode(parentId)}
           />
         </ReactFlowProvider>
 
@@ -134,8 +255,10 @@ export function App() {
           masteredNodeIds={masteredNodeIds}
           onClose={() => selectNode(null)}
           onToggleMastered={toggleMastered}
-          onSaveNode={updateNodeContent}
+          onSaveNode={isReadOnly ? () => {} : updateNodeContent}
           onSelectNode={selectNode}
+          onAddChild={isReadOnly ? undefined : (parentId) => addNewNode(parentId)}
+          onDeleteNode={isReadOnly ? undefined : (nodeId) => deleteNode(nodeId)}
         />
       </main>
 
@@ -165,7 +288,37 @@ export function App() {
         parsedTree={parsedTree}
         onExpandAll={expandAll}
       />
+
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+      />
+
+      <FlashcardsModal
+        isOpen={isFlashcardsOpen}
+        onClose={() => setIsFlashcardsOpen(false)}
+        parsedTree={parsedTree}
+        masteredNodeIds={masteredNodeIds}
+        toggleMastered={toggleMastered}
+      />
+
+      <ShareModal
+        isOpen={isShareOpen}
+        onClose={() => {
+          setIsShareOpen(false)
+          setActiveShareMap(null)
+        }}
+        map={currentDbMapForShare}
+      />
     </div>
+  )
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   )
 }
 

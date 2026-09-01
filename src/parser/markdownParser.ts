@@ -103,8 +103,8 @@ function extractParagraphAndBulletSubnodes(
 
   // 2. Parse line by line to build structured items (handles multiline bullets, adjacent definitions, etc.)
   const bulletRegex = /^(\s*[-*+]|\s*\d+\.)\s+(.+)$/
-  const standaloneBoldRegex = /^(__|\*\*)([^*_]{2,120})(__|\*\*):?\s*$/
-  const boldWithBodyRegex = /^(__|\*\*)([^*_]{2,120})(__|\*\*)[:\-—]\s*(.+)$/
+  const standaloneBoldRegex = /^(__|\*\*|_|\*)([^*_]{2,120})\1:?\s*$/
+  const boldWithBodyRegex = /^(__|\*\*|_|\*)([^*_]{2,120})\1[:\-—]\s*(.+)$/
   const colonLeadRegex = /^([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑ0-9\s()/\-–—',.]{2,50}):\s+(.+)$/
 
   const items: ParsedItem[] = []
@@ -124,10 +124,10 @@ function extractParagraphAndBulletSubnodes(
       const fullText = bulletMatch[2].trim()
       let title = fullText
 
-      const innerBold = fullText.match(/^(__|\*\*)([^*_]+)(__|\*\*):?\s*(.*)$/)
+      const innerBold = fullText.match(/^(__|\*\*|_|\*)([^*_]+)\1:?\s*(.*)$/)
       if (innerBold) {
         title = innerBold[2].trim()
-        const remainder = innerBold[4].trim()
+        const remainder = (innerBold[3] || '').trim()
         currentItem = {
           type: 'bullet',
           title: title.replace(/^[*_~`]+|[*_~`]+$/g, '').trim(),
@@ -166,7 +166,7 @@ function extractParagraphAndBulletSubnodes(
       currentItem = {
         type: 'bold_with_body',
         title: boldWithBodyMatch[2].trim().replace(/^[*_~`]+|[*_~`]+$/g, ''),
-        rawLines: [boldWithBodyMatch[4].trim()]
+        rawLines: [(boldWithBodyMatch[3] || '').trim()]
       }
     } else if (colonMatch) {
       if (currentItem) items.push(currentItem)

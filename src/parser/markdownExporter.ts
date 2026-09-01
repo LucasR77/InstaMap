@@ -15,12 +15,19 @@ function cleanNodeBody(content: string, label: string): string {
   const headingRegex = /^#{1,6}\s+[^\r\n]+(?:\r?\n)*/
   cleaned = cleaned.replace(headingRegex, '').trim()
 
-  // Strip leading '- **Title**: ' or '- Title: ' if present at start
+  // Strip leading '- **Title**: ' or '- _Title_: ' or 'Title: ' if present at start
   const bulletPrefix = new RegExp(
-    `^[-*+]\\s+(?:\\*\\*)?${escapeRegex(label)}(?:\\*\\*)?[:\\-—]?\\s*`,
+    `^[-*+]\\s+(?:\\*\\*|__|_|\\*)?${escapeRegex(label)}(?:\\*\\*|__|_|\\*)?[:\\-—]?\\s*`,
     'i'
   )
   cleaned = cleaned.replace(bulletPrefix, '').trim()
+
+  // Strip standalone leading title if matches label exactly
+  const titlePrefix = new RegExp(
+    `^(?:\\*\\*|__|_|\\*)?${escapeRegex(label)}(?:\\*\\*|__|_|\\*)?[:\\-—]?\\s*`,
+    'i'
+  )
+  cleaned = cleaned.replace(titlePrefix, '').trim()
 
   return cleaned
 }

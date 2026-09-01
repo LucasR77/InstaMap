@@ -6,9 +6,17 @@ interface NodeEditorProps {
   node: ParsedNode
   onSave: (id: string, newLabel: string, newContent: string) => void
   onCancel: () => void
+  onAddChild?: (parentId: string) => void
+  onDelete?: (nodeId: string) => void
 }
 
-export const NodeEditor: React.FC<NodeEditorProps> = ({ node, onSave, onCancel }) => {
+export const NodeEditor: React.FC<NodeEditorProps> = ({
+  node,
+  onSave,
+  onCancel,
+  onAddChild,
+  onDelete
+}) => {
   const [label, setLabel] = useState(node.label)
   const [content, setContent] = useState(node.content)
   const [savedSuccess, setSavedSuccess] = useState(false)
@@ -55,7 +63,7 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ node, onSave, onCancel }
           <span className="text-[10px] text-slate-500">{wordCount} palabras</span>
         </div>
         <textarea
-          rows={14}
+          rows={12}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           placeholder="Escribe tus notas, tablas, fórmulas KaTeX o código aquí..."
@@ -63,7 +71,34 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ node, onSave, onCancel }
         />
       </div>
 
-      {/* Action Buttons */}
+      {/* Secondary node operations: Add Child & Delete */}
+      <div className="flex items-center justify-between pt-2">
+        {onAddChild && (
+          <button
+            type="button"
+            onClick={() => onAddChild(node.id)}
+            className="px-2.5 py-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition-colors"
+          >
+            + Agregar Subnodo Hijo
+          </button>
+        )}
+
+        {onDelete && node.level > 1 && (
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm(`¿Eliminar el nodo "${node.label}" y todos sus subnodos?`)) {
+                onDelete(node.id)
+              }
+            }}
+            className="px-2.5 py-1 text-[11px] font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200 transition-colors ml-auto"
+          >
+            Eliminar Nodo
+          </button>
+        )}
+      </div>
+
+      {/* Primary Action Buttons */}
       <div className="flex items-center justify-between pt-2 border-t border-slate-200">
         <button
           type="button"
