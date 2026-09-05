@@ -155,10 +155,15 @@ function getBilateralLayout(
   const rightBranches = h2Children.slice(0, rightCount)
   const leftBranches = h2Children.slice(rightCount)
 
-  const depth1 = Math.round(300 * fontSizeScale)
-  const depth2 = Math.round(640 * fontSizeScale)
-  const depth3 = Math.round(980 * fontSizeScale)
+  const horizontalGap = Math.round(68 * fontSizeScale)
   const branchGap = Math.round(28 * fontSizeScale)
+
+  function getNodeWidth(node: ParsedNode): number {
+    if (node.level === 1) return dim.root.width
+    if (node.level === 2) return dim.island.width
+    if (node.level === 3 && !node.isLeaf) return dim.subtitle.width
+    return dim.leaf.width
+  }
 
   function layoutSide(branches: ParsedNode[], side: 'right' | 'left') {
     const isRight = side === 'right'
@@ -174,7 +179,13 @@ function getBilateralLayout(
     let currentY = -totalSideHeight / 2
 
     // Recursive helper to lay out any node and its children with symmetrical centering
-    function layoutNode(node: ParsedNode, startY: number, parentNode: ParsedNode | null) {
+    function layoutNode(
+      node: ParsedNode,
+      startY: number,
+      parentNode: ParsedNode | null,
+      parentX: number,
+      parentWidth: number
+    ) {
       const subtreeHeight = calculateSubtreeHeight(node, collapsedNodeIds, fontSizeScale, dim.gap)
       const centerY = startY + subtreeHeight / 2
       const selfHeight = getNodeHeight(node, fontSizeScale)
@@ -187,24 +198,12 @@ function getBilateralLayout(
       const isDimmed = highlightedNodeIds.size > 0 ? !highlightedNodeIds.has(node.id) : false
 
       const isLeaf = node.isLeaf || node.level >= 4
-      const isSubtitle = node.level === 3 && !node.isLeaf
 
-      // Determine dimensions and horizontal coordinate
-      let width = dim.island.width
-      let posX = 0
-
-      if (node.level === 2) {
-        width = dim.island.width
-        posX = isRight ? depth1 : -depth1 - width
-      } else if (isSubtitle) {
-        width = dim.subtitle.width
-        posX = isRight ? depth2 : -depth2 - width
-      } else {
-        // Leaf / Paragraph title
-        width = dim.leaf.width
-        const depthX = node.parentId === rootNode.id ? depth1 : node.level === 3 ? depth2 : depth3
-        posX = isRight ? depthX : -depthX - width
-      }
+      // Determine dimensions and horizontal coordinate strictly outward from parent
+      const width = getNodeWidth(node)
+      const posX = isRight
+        ? parentX + parentWidth + horizontalGap
+        : parentX - width - horizontalGap
 
       // Add the Node positioned at symmetrical centerY
       nodes.push({
@@ -273,20 +272,33 @@ function getBilateralLayout(
 
       // Layout children recursively if not collapsed
       if (!collapsedNodeIds.has(node.id) && node.children.length > 0) {
-        let childStartY = startY
-        for (const child of node.children) {
-          const childHeight = calculateSubtreeHeight(child, collapsedNodeIds, fontSizeScale, dim.gap)
-          layoutNode(child, childStartY, node)
+        const childrenHeights = node.children.map((c) =>
+          calculateSubtreeHeight(c, collapsedNodeIds, fontSizeScale, dim.gap)
+        )
+        const totalChildrenHeight =
+          childrenHeights.reduce((acc, h) => acc + h, 0) +
+          Math.max(0, node.children.length - 1) * dim.gap
+
+        const verticalOffset = Math.max(0, (subtreeHeight - totalChildrenHeight) / 2)
+        let childStartY = startY + verticalOffset
+
+        for (let i = 0; i < node.children.length; i++) {
+          const child = node.children[i]
+          const childHeight = childrenHeights[i]
+          layoutNode(child, childStartY, node, posX, width)
           childStartY += childHeight + dim.gap
         }
       }
     }
 
-    // Lay out all Level 2 branches on this side
+    // Lay out all Level 2 branches on this side relative to Root
+    const rootX = -dim.root.width / 2
+    const rootW = dim.root.width
+
     for (let i = 0; i < branches.length; i++) {
       const branch = branches[i]
       const bHeight = branchHeights[i]
-      layoutNode(branch, currentY, rootNode)
+      layoutNode(branch, currentY, rootNode, rootX, rootW)
       currentY += bHeight + branchGap
     }
   }
