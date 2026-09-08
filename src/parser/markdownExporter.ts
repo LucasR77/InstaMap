@@ -11,20 +11,32 @@ function cleanNodeBody(content: string, label: string): string {
   if (!content) return ''
   let cleaned = content.trim()
 
-  // Strip leading '# Title' if present
-  const headingRegex = /^#{1,6}\s+[^\r\n]+(?:\r?\n)*/
-  cleaned = cleaned.replace(headingRegex, '').trim()
+  // Strip leading '# Title' if present and matches label or is duplicate title heading
+  const headingRegex = /^#{1,6}\s+([^\r\n]+)(?:\r?\n)*/
+  const headingMatch = cleaned.match(headingRegex)
+  if (headingMatch) {
+    const headingText = headingMatch[1].trim().replace(/^[*_~`]+|[*_~`]+$/g, '')
+    const cleanLabel = label.trim().replace(/^[*_~`]+|[*_~`]+$/g, '')
+    if (
+      headingText.toLowerCase() === cleanLabel.toLowerCase() ||
+      headingText.length === 0 ||
+      cleanLabel.toLowerCase().startsWith(headingText.toLowerCase())
+    ) {
+      cleaned = cleaned.slice(headingMatch[0].length).trim()
+    }
+  }
 
   // Strip leading '- **Title**: ' or '- _Title_: ' or 'Title: ' if present at start
+  const escapedLabel = escapeRegex(label)
   const bulletPrefix = new RegExp(
-    `^[-*+]\\s+(?:\\*\\*|__|_|\\*)?${escapeRegex(label)}(?:\\*\\*|__|_|\\*)?[:\\-—]?\\s*`,
+    `^[-*+]\\s+(?:\\*\\*|__|_|\\*)?${escapedLabel}(?:\\*\\*|__|_|\\*)?[:\\-—]?\\s*`,
     'i'
   )
   cleaned = cleaned.replace(bulletPrefix, '').trim()
 
   // Strip standalone leading title if matches label exactly
   const titlePrefix = new RegExp(
-    `^(?:\\*\\*|__|_|\\*)?${escapeRegex(label)}(?:\\*\\*|__|_|\\*)?[:\\-—]?\\s*`,
+    `^(?:\\*\\*|__|_|\\*)?${escapedLabel}(?:\\*\\*|__|_|\\*)?[:\\-—]?\\s*`,
     'i'
   )
   cleaned = cleaned.replace(titlePrefix, '').trim()
@@ -67,11 +79,18 @@ export function exportTreeToMarkdown(nodes: ParsedNode[]): string {
       // Leaf / bullet node
       const body = cleanNodeBody(node.content, node.label)
       if (body) {
-        output.push(`- **${node.label}**: ${body}`)
+        const formattedBody = body.includes('\n')
+          ? body
+              .split('\n')
+              .map((l, idx) => (idx === 0 ? l : l.trim() ? `  ${l}` : ''))
+              .join('\n')
+          : body
+        output.push(`- **${node.label}**: ${formattedBody}`)
       } else {
         output.push(`- **${node.label}**`)
       }
     }
+
 
     if (node.children && node.children.length > 0) {
       for (const child of node.children) {

@@ -515,12 +515,17 @@ export function getNodeDisplayContent(node: ParsedNode): string {
   let cleaned = node.content.trim()
 
   // If starts with heading matching the label: '# Label' or '### Label'
-  const headingRegex = /^#{1,6}\s+[^\r\n]+(?:\r?\n)*/
+  const headingRegex = /^#{1,6}\s+([^\r\n]+)(?:\r?\n)*/
   const headingMatch = cleaned.match(headingRegex)
   if (headingMatch) {
-    const afterHeading = cleaned.slice(headingMatch[0].length).trim()
-    if (afterHeading) {
-      cleaned = afterHeading
+    const headingText = headingMatch[1].trim().replace(/^[*_~`]+|[*_~`]+$/g, '')
+    const cleanLabel = node.label.trim().replace(/^[*_~`]+|[*_~`]+$/g, '')
+    if (
+      headingText.toLowerCase() === cleanLabel.toLowerCase() ||
+      headingText.length === 0 ||
+      cleanLabel.toLowerCase().startsWith(headingText.toLowerCase())
+    ) {
+      cleaned = cleaned.slice(headingMatch[0].length).trim()
     }
   }
 
@@ -532,5 +537,6 @@ export function getNodeDisplayContent(node: ParsedNode): string {
   )
   cleaned = cleaned.replace(bulletPrefix, '').trim()
 
-  return cleaned || node.content
+  return cleaned
 }
+

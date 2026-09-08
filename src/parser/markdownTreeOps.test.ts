@@ -58,4 +58,66 @@ Contenido 2.`
     expect(exported).toContain('Tema 1')
     expect(exported).not.toContain('Tema 2 Para Borrar')
   })
+
+  it('updates a node label and content and preserves the node correctly on re-parse', () => {
+    const markdown = `# Documento Base
+
+## Tema 1
+Intro del tema 1.
+
+- **Concepto A**: Definición original de A.
+- **Concepto B**: Definición original de B.`
+
+    const tree = parseMarkdown(markdown, 'Documento Base')
+    const root = tree[0]
+    const tema1 = root.children[0]
+    const conceptoA = tema1.children[0]
+
+    expect(conceptoA.label).toBe('Concepto A')
+
+    // Simulate updating Concepto A
+    conceptoA.label = 'Concepto A Renovado'
+    conceptoA.content = 'Nueva definición completa de A sin encabezado repetido.'
+
+    const exported = exportTreeToMarkdown(tree)
+    console.log('--- EXPORTED MARKDOWN ---:\n', exported)
+
+    const reParsedTree = parseMarkdown(exported, 'Documento Base')
+    const reParsedRoot = reParsedTree[0]
+    const reParsedTema1 = reParsedRoot.children[0]
+    const reParsedA = reParsedTema1.children.find((c) => c.label === 'Concepto A Renovado')
+
+    expect(reParsedA).toBeDefined()
+    expect(reParsedA?.content).toContain('Nueva definición completa de A')
+    expect(reParsedTema1.children.length).toBe(2)
+  })
+
+  it('updates a parent section node label and intro content', () => {
+    const markdown = `# Documento Base
+
+## Tema 1
+Intro original.
+
+- **Concepto A**: Detalle.`
+
+    const tree = parseMarkdown(markdown, 'Documento Base')
+    const root = tree[0]
+    const tema1 = root.children[0]
+
+    // Simulate updating Tema 1
+    tema1.label = 'Tema 1 Modificado'
+    tema1.content = 'Intro modificada por el usuario.'
+
+    const exported = exportTreeToMarkdown(tree)
+    console.log('--- EXPORTED SECTION MARKDOWN ---:\n', exported)
+
+    const reParsedTree = parseMarkdown(exported, 'Documento Base')
+    const reParsedRoot = reParsedTree[0]
+    const reParsedTema1 = reParsedRoot.children.find((c) => c.label === 'Tema 1 Modificado')
+
+    expect(reParsedTema1).toBeDefined()
+    expect(reParsedTema1?.children.length).toBe(1)
+    expect(reParsedTema1?.children[0].label).toBe('Concepto A')
+  })
 })
+

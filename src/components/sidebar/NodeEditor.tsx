@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import type { ParsedNode } from '../../types/graph'
+import { getNodeDisplayContent } from '../../parser/markdownParser'
 import { Save, RotateCcw, Check } from 'lucide-react'
 
 interface NodeEditorProps {
@@ -18,23 +19,24 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({
   onDelete
 }) => {
   const [label, setLabel] = useState(node.label)
-  const [content, setContent] = useState(node.content)
+  const [content, setContent] = useState(() => getNodeDisplayContent(node))
   const [savedSuccess, setSavedSuccess] = useState(false)
   const [prevNodeId, setPrevNodeId] = useState(node.id)
 
   if (node.id !== prevNodeId) {
     setPrevNodeId(node.id)
     setLabel(node.label)
-    setContent(node.content)
+    setContent(getNodeDisplayContent(node))
     setSavedSuccess(false)
   }
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
-    onSave(node.id, label.trim() || node.label, content)
+    onSave(node.id, label.trim() || node.label, content.trim())
     setSavedSuccess(true)
     setTimeout(() => setSavedSuccess(false), 2000)
   }
+
 
   const wordCount = content.trim().split(/\s+/).filter(Boolean).length
 

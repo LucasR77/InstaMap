@@ -120,7 +120,7 @@ export function normalizeDocxMarkdown(rawMarkdown: string): string {
     const lineToEvaluate = boldMatch ? boldMatch[2].trim() : line
 
     // B. Formal chapter prefixes: "Capítulo 1", "Tema 2:", "Unidad 3:"
-    const chapterMatch = lineToEvaluate.match(/^(Cap[ií]tulo|Tema|M[oó]dulo|Unidad)\s+([0-9IVXLCDM]+)[:\.\s]\s*(.+)$/i)
+    const chapterMatch = lineToEvaluate.match(/^(Cap[ií]tulo|Tema|M[oó]dulo|Unidad)\s+([0-9IVXLCDM]+)[:.\s]\s*(.+)$/i)
     if (chapterMatch) {
       processedLines.push(`## ${lineToEvaluate}`)
       continue

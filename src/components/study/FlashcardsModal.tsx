@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { X, RotateCw, CheckCircle2, XCircle, ArrowLeft, ArrowRight, Award, Sparkles } from 'lucide-react'
 import type { ParsedNode } from '../../types/graph'
 import { getAllNodesList } from '../../parser/markdownParser'
@@ -29,6 +29,20 @@ export const FlashcardsModal: React.FC<FlashcardsModalProps> = ({
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)
 
+  const handleNext = useCallback(() => {
+    if (currentIndex < cards.length) {
+      setCurrentIndex((prev) => prev + 1)
+      setIsFlipped(false)
+    }
+  }, [currentIndex, cards.length])
+
+  const handlePrev = useCallback(() => {
+    if (currentIndex > 0) {
+      setCurrentIndex((prev) => prev - 1)
+      setIsFlipped(false)
+    }
+  }, [currentIndex])
+
   // Reset when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -53,26 +67,12 @@ export const FlashcardsModal: React.FC<FlashcardsModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, currentIndex, cards.length])
+  }, [isOpen, handleNext, handlePrev])
 
   if (!isOpen) return null
 
   const currentCard = cards[currentIndex]
   const isFinished = cards.length > 0 && currentIndex >= cards.length
-
-  const handleNext = () => {
-    if (currentIndex < cards.length) {
-      setCurrentIndex((prev) => prev + 1)
-      setIsFlipped(false)
-    }
-  }
-
-  const handlePrev = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex((prev) => prev - 1)
-      setIsFlipped(false)
-    }
-  }
 
   const handleMarkMastered = () => {
     if (!currentCard) return

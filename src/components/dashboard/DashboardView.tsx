@@ -20,7 +20,7 @@ import {
   Compass
 } from 'lucide-react'
 import { useDashboardState } from '../../hooks/useDashboardState'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../hooks/useAuth'
 import { parseDocx } from '../../parser/docxParser'
 import { InstaMapLogo } from '../common/InstaMapLogo'
 import type { DbMap } from '../../lib/supabase'
@@ -44,6 +44,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     folders,
     allFolders,
     maps,
+    allMapsMeta,
+    getFolderMapCount,
     loading,
     searchQuery,
     setSearchQuery,
@@ -71,7 +73,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Quick stats
-  const totalMasteredNodes = maps.reduce(
+  const totalMasteredNodes = allMapsMeta.reduce(
     (sum, m) => sum + (Array.isArray(m.mastered_node_ids) ? m.mastered_node_ids.length : 0),
     0
   )
@@ -282,7 +284,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="flex items-center gap-2 sm:gap-3 text-xs">
               <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50/90 border border-amber-200/80 text-amber-900 rounded-xl font-semibold shadow-2xs">
                 <GitFork className="w-3 h-3 text-amber-600 rotate-90" />
-                <span>{maps.length} {maps.length === 1 ? 'mapa' : 'mapas'}</span>
+                <span>
+                  {currentFolderId ? maps.length : allMapsMeta.length}{' '}
+                  {(currentFolderId ? maps.length : allMapsMeta.length) === 1 ? 'mapa' : 'mapas'}
+                </span>
               </div>
 
               {totalMasteredNodes > 0 && (
@@ -321,7 +326,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
                     {folders.map((folder) => {
-                      const folderMapsCount = maps.filter((m) => m.folder_id === folder.id).length
+                      const folderMapsCount = getFolderMapCount(folder.id)
                       return (
                         <div
                           key={folder.id}
@@ -372,7 +377,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-3.5">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                    {currentFolder ? `Mapas en ${currentFolder.name}` : 'Todos los Mapas'} ({maps.length})
+                    {currentFolder
+                      ? `Mapas en ${currentFolder.name}`
+                      : folders.length > 0
+                        ? 'Mapas en la raíz'
+                        : 'Mis Mapas'}{' '}
+                    ({maps.length})
                   </h3>
                 </div>
 

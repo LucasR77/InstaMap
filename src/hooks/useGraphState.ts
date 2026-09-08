@@ -23,7 +23,32 @@ const LEGACY_STORAGE_KEYS = {
 
 export type SaveStatus = 'saved' | 'saving' | 'local' | 'error'
 
+export function findNodePath(tree: ParsedNode[], id: string): number[] | null {
+  function search(nodes: ParsedNode[], currentPath: number[]): number[] | null {
+    for (let i = 0; i < nodes.length; i++) {
+      const path = [...currentPath, i]
+      if (nodes[i].id === id) return path
+      const found = search(nodes[i].children, path)
+      if (found) return found
+    }
+    return null
+  }
+  return search(tree, [])
+}
+
+export function getNodeByPath(tree: ParsedNode[], path: number[]): ParsedNode | null {
+  let currentList = tree
+  let current: ParsedNode | null = null
+  for (const index of path) {
+    if (!currentList || index < 0 || index >= currentList.length) return null
+    current = currentList[index]
+    currentList = current.children
+  }
+  return current
+}
+
 export function useGraphState(initialMap?: DbMap | null) {
+
   const [currentMapId, setCurrentMapId] = useState<string | null>(initialMap ? initialMap.id : null)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>(initialMap ? 'saved' : 'local')
 
@@ -319,6 +344,8 @@ export function useGraphState(initialMap?: DbMap | null) {
       let updatedNodeFound = false
       let isRootUpdated = false
 
+      const targetPath = findNodePath(parsedTree, id)
+
       function updateRecursive(nodes: ParsedNode[]): ParsedNode[] {
         return nodes.map((node) => {
           if (node.id === id) {
@@ -345,14 +372,40 @@ export function useGraphState(initialMap?: DbMap | null) {
       const updatedTree = updateRecursive(parsedTree)
 
       if (updatedNodeFound) {
+        const effectiveTitle = isRootUpdated && cleanLabel ? cleanLabel : documentTitle
         if (isRootUpdated && cleanLabel) {
           setDocumentTitleState(cleanLabel)
         }
         const newMarkdown = exportTreeToMarkdown(updatedTree)
         setRawMarkdown(newMarkdown)
+
+        // Resolve new ID in the re-parsed tree using targetPath
+        if (targetPath) {
+          const reParsedTree = parseMarkdown(newMarkdown, effectiveTitle)
+          const newNode = getNodeByPath(reParsedTree, targetPath)
+          if (newNode) {
+            setSelectedNodeId(newNode.id)
+            if (masteredNodeIds.has(id) && newNode.id !== id) {
+              setMasteredNodeIds((prev) => {
+                const next = new Set(prev)
+                next.delete(id)
+                next.add(newNode.id)
+                return next
+              })
+            }
+            if (collapsedNodeIds.has(id) && newNode.id !== id) {
+              setCollapsedNodeIds((prev) => {
+                const next = new Set(prev)
+                next.delete(id)
+                next.add(newNode.id)
+                return next
+              })
+            }
+          }
+        }
       }
     },
-    [parsedTree]
+    [parsedTree, documentTitle, masteredNodeIds, collapsedNodeIds]
   )
 
   // Add new node (child or root branch)
@@ -370,13 +423,13 @@ export function useGraphState(initialMap?: DbMap | null) {
               id: newId,
               label: initialLabel,
               level: childLevel,
-              content: initialContent || (childLevel <= 3 ? `### ${initialLabel}` : `- **${initialLabel}**: `),
+              content: initialContent,
               parentId: node.id,
               children: [],
               wordCount: calculateReadingStats(initialContent || initialLabel).wordCount,
               readingTimeMinutes: 1,
               islandIndex: node.islandIndex,
-              isLeaf: true
+              isLeaf: childLevel >= 4
             }
             added = newNode
             return {
@@ -403,6 +456,7 @@ export function useGraphState(initialMap?: DbMap | null) {
 
       let newTree: ParsedNode[] = []
       let createdNode: ParsedNode | null = null
+      let newPath: number[] = []
 
       if (!parentId || parentId === parsedTree[0]?.id) {
         // Add to main root
@@ -411,7 +465,7 @@ export function useGraphState(initialMap?: DbMap | null) {
           id: newId,
           label: initialLabel,
           level: 2,
-          content: initialContent || `## ${initialLabel}`,
+          content: initialContent,
           parentId: root?.id || null,
           children: [],
           wordCount: calculateReadingStats(initialContent || initialLabel).wordCount,
@@ -422,6 +476,7 @@ export function useGraphState(initialMap?: DbMap | null) {
         createdNode = newNode
 
         if (root) {
+          newPath = [0, root.children.length]
           newTree = [
             {
               ...root,
@@ -429,9 +484,16 @@ export function useGraphState(initialMap?: DbMap | null) {
             }
           ]
         } else {
+          newPath = [0]
           newTree = [newNode]
         }
       } else {
+        const targetParentPath = findNodePath(parsedTree, parentId)
+        const parentNode = targetParentPath ? getNodeByPath(parsedTree, targetParentPath) : null
+        const childIndex = parentNode ? parentNode.children.length : 0
+        if (targetParentPath) {
+          newPath = [...targetParentPath, childIndex]
+        }
         const res = addRecursive(parsedTree)
         newTree = res.updated
         createdNode = res.addedNode
@@ -440,12 +502,17 @@ export function useGraphState(initialMap?: DbMap | null) {
       const newMarkdown = exportTreeToMarkdown(newTree)
       setRawMarkdown(newMarkdown)
 
-      if (createdNode) {
+      const reParsedTree = parseMarkdown(newMarkdown, documentTitle)
+      const newNode = newPath.length > 0 ? getNodeByPath(reParsedTree, newPath) : null
+      if (newNode) {
+        setSelectedNodeId(newNode.id)
+      } else if (createdNode) {
         setSelectedNodeId(createdNode.id)
       }
     },
-    [parsedTree]
+    [parsedTree, documentTitle]
   )
+
 
   // Delete node and its subtree
   const deleteNode = useCallback(
@@ -534,13 +601,24 @@ export function useGraphState(initialMap?: DbMap | null) {
 
   const selectedNode = useMemo(() => {
     if (!selectedNodeId) return null
-    // Try direct lookup
+    // Direct lookup
     const directMatch = nodeMap.get(selectedNodeId)
     if (directMatch) return directMatch
 
-    // If ID changed slightly during re-parsing, find matching node in allNodesList
-    return allNodesList[0] || null
+    // Never fall back to root node (allNodesList[0])!
+    // Try finding by partial ID match
+    const partialMatch = allNodesList.find(
+      (n) => n.id === selectedNodeId || n.id.startsWith(selectedNodeId) || selectedNodeId.startsWith(n.id)
+    )
+    return partialMatch || null
   }, [selectedNodeId, nodeMap, allNodesList])
+
+  useEffect(() => {
+    if (selectedNode && selectedNode.id !== selectedNodeId) {
+      setSelectedNodeId(selectedNode.id)
+    }
+  }, [selectedNode, selectedNodeId])
+
 
   return {
     rawMarkdown,

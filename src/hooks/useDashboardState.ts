@@ -1,11 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, isSupabaseConfigured, type DbFolder, type DbMap } from '../lib/supabase'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from './useAuth'
 import { SAMPLE_DOCUMENTS } from '../samples/sampleData'
 
 export interface BreadcrumbItem {
   id: string | null
   name: string
+}
+
+export interface MapMeta {
+  id: string
+  folder_id: string | null
+  mastered_node_ids: string[] | null
 }
 
 export function useDashboardState() {
@@ -14,6 +20,7 @@ export function useDashboardState() {
   const [folders, setFolders] = useState<DbFolder[]>([])
   const [allFolders, setAllFolders] = useState<DbFolder[]>([])
   const [maps, setMaps] = useState<DbMap[]>([])
+  const [allMapsMeta, setAllMapsMeta] = useState<MapMeta[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -21,7 +28,9 @@ export function useDashboardState() {
   const refreshData = useCallback(async () => {
     if (!user || !isSupabaseConfigured) {
       setFolders([])
+      setAllFolders([])
       setMaps([])
+      setAllMapsMeta([])
       setLoading(false)
       return
     }
@@ -38,13 +47,22 @@ export function useDashboardState() {
       const loadedAllFolders = (allFoldersData as DbFolder[]) || []
       setAllFolders(loadedAllFolders)
 
-      // 2. Fetch subfolders in current folder
+      // 2. Fetch all user maps metadata (id, folder_id, mastered_node_ids) for accurate folder counts and stats
+      const { data: mapsMetaData } = await supabase
+        .from('maps')
+        .select('id, folder_id, mastered_node_ids')
+        .eq('user_id', user.id)
+
+      const loadedMapsMeta = (mapsMetaData as MapMeta[]) || []
+      setAllMapsMeta(loadedMapsMeta)
+
+      // 3. Fetch subfolders in current folder
       const filteredFolders = currentFolderId
         ? loadedAllFolders.filter((f) => f.parent_id === currentFolderId)
         : loadedAllFolders.filter((f) => f.parent_id === null)
       setFolders(filteredFolders)
 
-      // 3. Fetch maps in current folder
+      // 4. Fetch maps in current folder
       let mapsQuery = supabase
         .from('maps')
         .select('*')
@@ -180,6 +198,25 @@ export function useDashboardState() {
     await createMap(`${target.title} (Copia)`, target.raw_markdown, target.folder_id)
   }
 
+  // Calculate map count for a folder (including any nested subfolders)
+  const getFolderMapCount = useCallback(
+    (folderId: string): number => {
+      const folderIds = new Set<string>([folderId])
+      let added = true
+      while (added) {
+        added = false
+        for (const f of allFolders) {
+          if (f.parent_id && folderIds.has(f.parent_id) && !folderIds.has(f.id)) {
+            folderIds.add(f.id)
+            added = true
+          }
+        }
+      }
+      return allMapsMeta.filter((m) => m.folder_id && folderIds.has(m.folder_id)).length
+    },
+    [allFolders, allMapsMeta]
+  )
+
   // Search filtered items
   const filteredFolders = searchQuery.trim()
     ? folders.filter((f) => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -196,6 +233,8 @@ export function useDashboardState() {
     folders: filteredFolders,
     allFolders,
     maps: filteredMaps,
+    allMapsMeta,
+    getFolderMapCount,
     loading,
     searchQuery,
     setSearchQuery,

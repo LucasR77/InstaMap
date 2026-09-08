@@ -17,7 +17,7 @@ import {
   LogIn
 } from 'lucide-react'
 import { InstaMapLogo } from '../common/InstaMapLogo'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../hooks/useAuth'
 import type { SaveStatus } from '../../hooks/useGraphState'
 
 interface AppHeaderProps {

@@ -241,12 +241,23 @@ export const ReadingSidebar: React.FC<ReadingSidebarProps> = ({
     return extractIntroContent(node.content, node.children)
   }, [node])
 
+  const cleanNodeContent = useMemo(() => {
+    if (!node) return ''
+    return getNodeDisplayContent(node)
+  }, [node])
+
+  const cleanIntroContent = useMemo(() => {
+    if (!introContent || !node) return ''
+    return getNodeDisplayContent({ ...node, content: introContent })
+  }, [introContent, node])
+
   const continuousContent = useMemo(() => {
     if (!node) return ''
-    return buildContinuousContent(node, introContent)
-  }, [node, introContent])
+    return buildContinuousContent(node, cleanIntroContent || introContent)
+  }, [node, cleanIntroContent, introContent])
 
   if (!isOpen || !node) return null
+
 
   const hasChildren = node.children && node.children.length > 0
 
@@ -375,13 +386,20 @@ export const ReadingSidebar: React.FC<ReadingSidebarProps> = ({
         {activeTab === 'preview' ? (
           <div className="space-y-5">
             {/* If node has direct intro content, display it */}
-            {introContent ? (
+            {cleanIntroContent ? (
               <div className="pb-3 border-b border-slate-100">
-                <MarkdownViewer content={introContent} />
+                <MarkdownViewer content={cleanIntroContent} />
+              </div>
+            ) : !hasChildren && cleanNodeContent ? (
+              <div className="pb-3 border-b border-slate-100">
+                <MarkdownViewer content={cleanNodeContent} />
               </div>
             ) : !hasChildren ? (
-              <MarkdownViewer content={node.content} />
+              <div className="p-4 rounded-xl bg-slate-50/50 border border-slate-200 text-slate-400 italic text-xs">
+                Sin notas ni contenido adicional. Puedes hacer clic en "Editar" para agregarlas.
+              </div>
             ) : null}
+
 
             {/* Complete Content of All Children */}
             {hasChildren && (
