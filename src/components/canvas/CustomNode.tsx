@@ -16,7 +16,6 @@ export const CustomNode = memo(({ data }: NodeProps) => {
     isMastered,
     islandColor,
     side = 'right',
-    isLeaf,
     isHighlighted,
     isDimmed,
     isSelected,
@@ -28,8 +27,8 @@ export const CustomNode = memo(({ data }: NodeProps) => {
   } = nodeData
 
   const isRoot = level === 1
-  const isTitle = level === 2 && !isLeaf // Level 2 Island Category
-  const isSubtitle = level === 3 && !isLeaf // Level 3 Subcategory
+  const isTitle = level === 2 // Level 2 Island Category
+  const isSubtitle = level === 3 // Level 3 Subcategory
 
   const isLeftSide = side === 'left'
 
@@ -145,6 +144,12 @@ export const CustomNode = memo(({ data }: NodeProps) => {
 
         {/* Actions (Collapse / Mastery) */}
         <div className={`flex items-center gap-1.5 shrink-0 ${isLeftSide ? 'order-1' : ''}`}>
+          {hasContent && (
+            <span title="Ver contenido">
+              <BookOpen className="w-3.5 h-3.5 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+            </span>
+          )}
+
           <button
             type="button"
             onClick={handleMasteredClick}
@@ -229,6 +234,12 @@ export const CustomNode = memo(({ data }: NodeProps) => {
 
         {/* Actions */}
         <div className={`flex items-center gap-1.5 shrink-0 ${isLeftSide ? 'order-1' : ''}`}>
+          {hasContent && (
+            <span title="Ver contenido">
+              <BookOpen className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition-colors shrink-0" />
+            </span>
+          )}
+
           <button
             type="button"
             onClick={handleMasteredClick}
@@ -267,26 +278,26 @@ export const CustomNode = memo(({ data }: NodeProps) => {
     )
   }
 
-  // 4. Nodo TÍTULO DE PÁRRAFO (Nivel 4 / Hojas - e.g. "Nodos Autónomos"): Texto completo vertical
+  // 4. Nodo TÍTULO DE PÁRRAFO / DETALLE / HOJA (Nivel 4+): Tarjeta blanca con acento lateral orientado al conector padre
   const leafWidth = cardWidth || Math.round(275 * fontScale)
   const leafFontSize = Math.round(13 * fontScale)
+  const accentColor = islandColor.primary || islandColor.accentHex
 
   return (
     <div
       onClick={handleCardClick}
       style={{
         width: `${leafWidth}px`,
-        fontSize: `${leafFontSize}px`
+        fontSize: `${leafFontSize}px`,
+        ...(isLeftSide
+          ? { borderRightWidth: '3.5px', borderRightColor: accentColor }
+          : { borderLeftWidth: '3.5px', borderLeftColor: accentColor })
       }}
-      className={`group relative flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border shadow-xs cursor-pointer select-none transition-all duration-150 ${
-        islandColor.bg
-      } ${islandColor.border} ${
-        isLeftSide ? 'text-right flex-row-reverse' : 'text-left'
-      } ${
+      className={`group relative flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs cursor-pointer select-none transition-all duration-150 ${
         isSelected
           ? 'ring-2 ring-indigo-500 shadow-md scale-105'
-          : 'hover:scale-[1.02] hover:shadow-sm'
-      } ${isHighlighted ? 'ring-2 ring-amber-400' : ''} ${
+          : 'hover:scale-[1.02] hover:shadow-xs hover:border-slate-300'
+      } ${isHighlighted ? 'ring-2 ring-amber-400 scale-105' : ''} ${
         isDimmed ? 'opacity-30' : 'opacity-100'
       }`}
     >
@@ -303,23 +314,60 @@ export const CustomNode = memo(({ data }: NodeProps) => {
         className="!w-1.5 !h-1.5 !bg-slate-400 !border-none opacity-0"
       />
 
-      {/* Mastered Indicator */}
-      {isMastered && (
-        <CheckCircle2 className="w-4 h-4 text-emerald-600 fill-emerald-100 shrink-0" />
-      )}
+      {/* Label (Full text wrapped vertically) */}
+      <div className={`flex items-center gap-1.5 flex-1 min-w-0 ${isLeftSide ? 'order-2 text-right' : 'text-left'}`}>
+        <span
+          className={`font-medium leading-snug whitespace-normal break-words w-full text-slate-800 group-hover:text-slate-950 ${
+            isMastered ? 'line-through opacity-60 text-slate-400' : ''
+          }`}
+        >
+          {label}
+        </span>
+      </div>
 
-      {/* Full text vertically wrapped without truncation */}
-      <span
-        className={`font-semibold leading-snug whitespace-normal break-words flex-1 min-w-0 ${islandColor.text} ${
-          isMastered ? 'line-through opacity-60' : ''
-        }`}
-      >
-        {label}
-      </span>
+      {/* Actions (Mastered, Collapse if hasChildren, Reading Content) */}
+      <div className={`flex items-center gap-1.5 shrink-0 ${isLeftSide ? 'order-1' : ''}`}>
+        {hasContent && (
+          <span title="Ver contenido">
+            <BookOpen className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition-colors shrink-0" />
+          </span>
+        )}
 
-      {hasContent && (
-        <BookOpen className="w-3.5 h-3.5 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-      )}
+        <button
+          type="button"
+          onClick={handleMasteredClick}
+          className={`p-0.5 rounded-full transition-colors ${
+            isMastered ? 'text-emerald-600' : 'text-slate-300 hover:text-slate-600 opacity-0 group-hover:opacity-100'
+          }`}
+          title={isMastered ? 'Marcar como no aprendido' : 'Marcar como aprendido'}
+        >
+          <CheckCircle2
+            className={`w-3.5 h-3.5 ${isMastered ? 'fill-emerald-200 text-emerald-600 scale-110 !opacity-100' : 'text-slate-300'}`}
+          />
+        </button>
+
+        {hasChildren && (
+          <button
+            type="button"
+            onClick={handleCollapseClick}
+            className={`flex items-center gap-0.5 px-1.5 py-0.5 text-[11px] font-bold rounded transition-all ${
+              isCollapsed
+                ? 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+            }`}
+            title={isCollapsed ? 'Desplegar sub-nodos' : 'Colapsar sub-nodos'}
+          >
+            {isCollapsed ? (
+              <>
+                {isLeftSide ? <ChevronLeft className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                <span>+{childCount}</span>
+              </>
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+          </button>
+        )}
+      </div>
     </div>
   )
 })
