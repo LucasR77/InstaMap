@@ -83,6 +83,53 @@ export function convertHtmlTablesToMarkdown(content: string): string {
 }
 
 /**
+ * Converts Mammoth HTML output into clean Markdown when tables are present,
+ * preserving table structures that Mammoth's native markdown writer drops.
+ */
+export function convertMammothHtmlToMarkdown(html: string): string {
+  if (!html) return ''
+
+  // 1. Convert tables first before stripping or changing other tags
+  let md = convertHtmlTablesToMarkdown(html)
+
+  // 2. Convert headings h1-h6
+  md = md.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_match, level, content) => {
+    const hashes = '#'.repeat(parseInt(level, 10))
+    const cleanContent = content.replace(/<[^>]+>/g, '').trim()
+    return `\n\n${hashes} ${cleanContent}\n\n`
+  })
+
+  // 3. Convert lists
+  md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_match, content) => {
+    return `\n- ${content.trim()}`
+  })
+  md = md.replace(/<\/?(?:ul|ol)[^>]*>/gi, '\n')
+
+  // 4. Convert blockquotes
+  md = md.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_match, content) => {
+    return `\n> ${content.trim()}\n\n`
+  })
+
+  // 5. Convert paragraphs
+  md = md.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, (_match, content) => {
+    return `\n\n${content.trim()}\n\n`
+  })
+
+  // 6. Inline styles: strong/b, em/i, links, images
+  md = md.replace(/<(?:strong|b)[^>]*>([\s\S]*?)<\/(?:strong|b)>/gi, '**$1**')
+  md = md.replace(/<(?:em|i)[^>]*>([\s\S]*?)<\/(?:em|i)>/gi, '*$1*')
+  md = md.replace(/<a[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
+  md = md.replace(/<img[^>]*src=["']([^"']*)["'][^>]*alt=["']([^"']*)["'][^>]*\/?>/gi, '![$2]($1)')
+  md = md.replace(/<img[^>]*src=["']([^"']*)["'][^>]*\/?>/gi, '![]($1)')
+  md = md.replace(/<br\s*\/?>/gi, '  \n')
+
+  // 7. Strip any remaining HTML tags
+  md = md.replace(/<[^>]+>/g, '')
+
+  return md
+}
+
+/**
  * Normalizes raw Markdown emitted by Mammoth:
  * 1. Converts embedded HTML tables to Markdown tables.
  * 2. Unescapes overly aggressive backslash escapes (\., \(, \), \-, \+, etc.)
@@ -109,8 +156,8 @@ export function normalizeDocxMarkdown(rawMarkdown: string): string {
       continue
     }
 
-    // Skip lines that are already markdown headings
-    if (line.startsWith('#')) {
+    // Skip lines that are already markdown headings or table lines
+    if (line.startsWith('#') || line.startsWith('|')) {
       processedLines.push(line)
       continue
     }
@@ -221,7 +268,7 @@ export async function parseDocx(
     mammothOptions.buffer = nodeBuffer.from(arrayBuffer)
   }
 
-  const result = await mammoth.convertToMarkdown(
+  const htmlResult = await mammoth.convertToHtml(
     mammothOptions,
     {
       styleMap: DOCX_STYLE_MAP,
@@ -229,8 +276,25 @@ export async function parseDocx(
     }
   )
 
-  const messages = result.messages ? result.messages.map((m) => m.message) : []
-  const normalizedMarkdown = normalizeDocxMarkdown(result.value)
+  let rawMarkdown = ''
+  let messages: string[] = []
+
+  if (htmlResult.value && htmlResult.value.includes('<table')) {
+    rawMarkdown = convertMammothHtmlToMarkdown(htmlResult.value)
+    messages = htmlResult.messages ? htmlResult.messages.map((m) => m.message) : []
+  } else {
+    const mdResult = await mammoth.convertToMarkdown(
+      mammothOptions,
+      {
+        styleMap: DOCX_STYLE_MAP,
+        includeDefaultStyleMap: true
+      }
+    )
+    rawMarkdown = mdResult.value
+    messages = mdResult.messages ? mdResult.messages.map((m) => m.message) : []
+  }
+
+  const normalizedMarkdown = normalizeDocxMarkdown(rawMarkdown)
 
   // Try to extract document title if not explicitly set
   let resolvedTitle = fallbackTitle

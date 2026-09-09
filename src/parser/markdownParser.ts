@@ -26,6 +26,13 @@ function generateNodeId(label: string, index: number): string {
   return `node-${index}-${cleanLabel || 'item'}`
 }
 
+/**
+ * Strips leading/trailing markdown bold, italic, strikethrough, backtick decorations
+ */
+export function stripMarkdownDecorations(text: string): string {
+  return text.replace(/^[*_~`]+|[*_~`]+$/g, '').trim()
+}
+
 interface RawSection {
   level: number
   label: string
@@ -36,6 +43,86 @@ interface ParsedItem {
   type: 'bullet' | 'standalone_bold' | 'bold_with_body' | 'colon_lead' | 'intro'
   title: string
   rawLines: string[]
+}
+
+interface ContentBlock {
+  type: 'lines' | 'table'
+  lines: string[]
+}
+
+function partitionIntoBlocks(lines: string[]): ContentBlock[] {
+  const blocks: ContentBlock[] = []
+  let currentLines: string[] = []
+  let currentTable: string[] = []
+
+  const isTableLine = (l: string) => {
+    const t = l.trim()
+    return t.startsWith('|') && t.endsWith('|')
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (isTableLine(line)) {
+      if (currentLines.length > 0) {
+        blocks.push({ type: 'lines', lines: currentLines })
+        currentLines = []
+      }
+      currentTable.push(line)
+    } else {
+      if (currentTable.length > 0) {
+        if (currentTable.length >= 2) {
+          blocks.push({ type: 'table', lines: currentTable })
+        } else {
+          currentLines.push(...currentTable)
+        }
+        currentTable = []
+      }
+      currentLines.push(line)
+    }
+  }
+
+  if (currentTable.length >= 2) {
+    blocks.push({ type: 'table', lines: currentTable })
+  } else if (currentTable.length > 0) {
+    currentLines.push(...currentTable)
+  }
+
+  if (currentLines.length > 0) {
+    blocks.push({ type: 'lines', lines: currentLines })
+  }
+
+  return blocks
+}
+
+function propagateIslandAndLevels(node: ParsedNode, islandIndex: number, currentLevel: number) {
+  node.islandIndex = islandIndex
+  node.level = Math.min(6, currentLevel)
+  for (const child of node.children) {
+    propagateIslandAndLevels(child, islandIndex, currentLevel + 1)
+  }
+}
+
+function extractBoldDefinition(trimmed: string): { title: string; body: string } | null {
+  const boldRegex = /^(\s*[-*+]?\s*)?(__|\*\*|_|\*)([^*_]{2,120}?)(?:\s*:\s*)?\2(?:\s*[:\-—]\s*|\s*)(.+)$/
+  const match = trimmed.match(boldRegex)
+  if (match) {
+    const rawTitle = match[3].trim().replace(/^[:\-—\s]+|[:\-—\s]+$/g, '')
+    const body = match[4].trim()
+    if (rawTitle && body) {
+      return { title: rawTitle, body }
+    }
+  }
+  return null
+}
+
+function extractStandaloneBold(trimmed: string): string | null {
+  const boldRegex = /^(\s*[-*+]?\s*)?(__|\*\*|_|\*)([^*_]{2,120}?)(?:\s*:\s*)?\2:?\s*$/
+  const match = trimmed.match(boldRegex)
+  if (match) {
+    const rawTitle = match[3].trim().replace(/^[:\-—\s]+|[:\-—\s]+$/g, '')
+    if (rawTitle) return rawTitle
+  }
+  return null
 }
 
 /**
@@ -49,43 +136,165 @@ function extractParagraphAndBulletSubnodes(
 ): { children: ParsedNode[]; introLines: string[] } {
   const children: ParsedNode[] = []
   let childCounter = 0
+  const introLines: string[] = []
+  let lastConceptNode: ParsedNode | null = null
+  let isFirstTextBlock = true
 
-  // 1. Check for standard Markdown Table: lines with '|'
-  const tableLines = lines.filter((l) => l.trim().startsWith('|') && l.trim().endsWith('|'))
-  if (tableLines.length >= 2) {
-    const rows = tableLines.map((row) =>
-      row
-        .split('|')
-        .map((cell) => cell.trim())
-        .filter((_c, idx, arr) => idx > 0 && idx < arr.length - 1)
-    )
+  const bulletRegex = /^(\s*[-*+]|\s*\d+\.)\s+(.+)$/
+  const colonLeadRegex = /^([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑ0-9\s()/\-–—',.]{2,50}):\s+(.+)$/
 
-    const headers = rows[0] || []
-    const dataRows = rows.slice(1).filter((r) => !r.every((c) => /^[-:\s]+$/.test(c)))
+  const blocks = partitionIntoBlocks(lines)
 
-    if (dataRows.length > 0) {
-      for (const row of dataRows) {
-        if (row.length === 0) continue
-        const rawLabel = row[0] || ''
-        const cleanLabel = rawLabel.replace(/^[*_~`]+|[*_~`]+$/g, '').trim()
-        if (!cleanLabel) continue
+  for (const block of blocks) {
+    if (block.type === 'lines') {
+      const items: ParsedItem[] = []
+      let currentItem: ParsedItem | null = null
 
-        const detailLines: string[] = []
-        for (let c = 1; c < row.length; c++) {
-          const colHeader = headers[c] || `Columna ${c + 1}`
-          const colVal = row[c]
-          if (colVal) {
-            detailLines.push(`- **${colHeader}:** ${colVal}`)
+      for (const line of block.lines) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+
+        const boldDefinition = extractBoldDefinition(trimmed)
+        const standaloneBoldTitle = !boldDefinition && extractStandaloneBold(trimmed)
+        const colonMatch = !boldDefinition && !standaloneBoldTitle && trimmed.match(colonLeadRegex)
+        const bulletMatch = !boldDefinition && !standaloneBoldTitle && !colonMatch && trimmed.match(bulletRegex)
+
+        if (boldDefinition) {
+          if (currentItem) items.push(currentItem)
+          currentItem = {
+            type: 'bold_with_body',
+            title: boldDefinition.title.replace(/^[*_~`]+|[*_~`]+$/g, '').trim(),
+            rawLines: [boldDefinition.body]
+          }
+        } else if (standaloneBoldTitle) {
+          if (currentItem) items.push(currentItem)
+          currentItem = {
+            type: 'standalone_bold',
+            title: standaloneBoldTitle.replace(/^[*_~`]+|[*_~`]+$/g, '').trim(),
+            rawLines: []
+          }
+        } else if (colonMatch) {
+          if (currentItem) items.push(currentItem)
+          currentItem = {
+            type: 'colon_lead',
+            title: colonMatch[1].trim(),
+            rawLines: [colonMatch[2].trim()]
+          }
+        } else if (bulletMatch) {
+          if (currentItem) items.push(currentItem)
+          const fullText = bulletMatch[2].trim()
+          let title = fullText
+
+          const innerBold = extractBoldDefinition(fullText)
+          if (innerBold) {
+            title = innerBold.title
+            currentItem = {
+              type: 'bullet',
+              title: title.replace(/^[*_~`]+|[*_~`]+$/g, '').trim(),
+              rawLines: innerBold.body ? [innerBold.body] : []
+            }
+          } else {
+            const colonIndex = fullText.indexOf(':')
+            if (colonIndex > 0 && colonIndex < 55) {
+              title = fullText.slice(0, colonIndex).trim()
+              const remainder = fullText.slice(colonIndex + 1).trim()
+              currentItem = {
+                type: 'bullet',
+                title: title.replace(/^[*_~`]+|[*_~`]+$/g, '').trim(),
+                rawLines: remainder ? [remainder] : []
+              }
+            } else {
+              if (fullText.length > 55) {
+                title = fullText.slice(0, 50) + '...'
+              }
+              currentItem = {
+                type: 'bullet',
+                title: title.replace(/^[*_~`]+|[*_~`]+$/g, '').trim(),
+                rawLines: [fullText]
+              }
+            }
+          }
+        } else {
+          // Plain text line
+          if (currentItem) {
+            currentItem.rawLines.push(trimmed)
+          } else {
+            currentItem = {
+              type: 'intro',
+              title: '',
+              rawLines: [trimmed]
+            }
           }
         }
+      }
+      if (currentItem) items.push(currentItem)
 
-        const bodyContent = detailLines.length > 0 ? detailLines.join('\n') : rawLabel
-        const fullContent = `### ${cleanLabel}\n\n${bodyContent}`
+      let itemStartIndex = 0
+      if (isFirstTextBlock) {
+        while (itemStartIndex < items.length && items[itemStartIndex].type === 'intro') {
+          introLines.push(...items[itemStartIndex].rawLines)
+          itemStartIndex++
+        }
+        isFirstTextBlock = false
+      }
+
+      // Check for empty standalone_bold table headers if any
+      let emptyBoldCount = 0
+      while (
+        itemStartIndex + emptyBoldCount < items.length &&
+        items[itemStartIndex + emptyBoldCount].type === 'standalone_bold' &&
+        items[itemStartIndex + emptyBoldCount].rawLines.length === 0
+      ) {
+        emptyBoldCount++
+      }
+
+      let tableHeaders: string[] = []
+      if (emptyBoldCount >= 2 && emptyBoldCount <= 5) {
+        tableHeaders = items
+          .slice(itemStartIndex, itemStartIndex + emptyBoldCount)
+          .map((it) => it.title)
+        itemStartIndex += emptyBoldCount
+      }
+
+      for (let i = itemStartIndex; i < items.length; i++) {
+        const item = items[i]
+        if (item.type === 'intro' || !item.title) {
+          if (item.rawLines.length > 0) {
+            if (lastConceptNode) {
+              lastConceptNode.content += '\n\n' + item.rawLines.join('\n\n')
+              const stats = calculateReadingStats(lastConceptNode.content)
+              lastConceptNode.wordCount = stats.wordCount
+              lastConceptNode.readingTimeMinutes = stats.readingTimeMinutes
+            } else {
+              introLines.push(...item.rawLines)
+            }
+          }
+          continue
+        }
+
+        let formattedBody = ''
+        if (item.type === 'standalone_bold' && tableHeaders.length >= 2 && item.rawLines.length > 0) {
+          const colNames =
+            tableHeaders.length === item.rawLines.length + 1
+              ? tableHeaders.slice(1)
+              : tableHeaders
+
+          formattedBody = item.rawLines
+            .map((text, idx) => {
+              const colName = colNames[idx] || `Detalle ${idx + 1}`
+              return `- **${colName}:** ${text}`
+            })
+            .join('\n\n')
+        } else if (item.rawLines.length > 0) {
+          formattedBody = item.rawLines.join('\n\n')
+        }
+
+        const fullContent = formattedBody ? `### ${item.title}\n\n${formattedBody}` : `### ${item.title}`
         const stats = calculateReadingStats(fullContent)
 
-        children.push({
+        const conceptNode: ParsedNode = {
           id: generateNodeId(`${parentNode.id}-p-${childCounter++}`, baseIndex + childCounter),
-          label: cleanLabel,
+          label: item.title,
           level: Math.min(6, parentNode.level + 1),
           content: fullContent,
           parentId: parentNode.id,
@@ -94,170 +303,112 @@ function extractParagraphAndBulletSubnodes(
           readingTimeMinutes: stats.readingTimeMinutes,
           islandIndex: parentNode.islandIndex,
           isLeaf: true
-        })
-      }
-      const nonTableLines = lines.filter((l) => !l.trim().startsWith('|') || !l.trim().endsWith('|'))
-      return { children, introLines: nonTableLines }
-    }
-  }
-
-  // 2. Parse line by line to build structured items (handles multiline bullets, adjacent definitions, etc.)
-  const bulletRegex = /^(\s*[-*+]|\s*\d+\.)\s+(.+)$/
-  const standaloneBoldRegex = /^(__|\*\*|_|\*)([^*_]{2,120})\1:?\s*$/
-  const boldWithBodyRegex = /^(__|\*\*|_|\*)([^*_]{2,120})\1[:\-—]\s*(.+)$/
-  const colonLeadRegex = /^([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑ0-9\s()/\-–—',.]{2,50}):\s+(.+)$/
-
-  const items: ParsedItem[] = []
-  let currentItem: ParsedItem | null = null
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-
-    const bulletMatch = trimmed.match(bulletRegex)
-    const standaloneBoldMatch = trimmed.match(standaloneBoldRegex)
-    const boldWithBodyMatch = trimmed.match(boldWithBodyRegex)
-    const colonMatch = trimmed.match(colonLeadRegex)
-
-    if (bulletMatch) {
-      if (currentItem) items.push(currentItem)
-      const fullText = bulletMatch[2].trim()
-      let title = fullText
-
-      const innerBold = fullText.match(/^(__|\*\*|_|\*)([^*_]+)\1:?\s*(.*)$/)
-      if (innerBold) {
-        title = innerBold[2].trim()
-        const remainder = (innerBold[3] || '').trim()
-        currentItem = {
-          type: 'bullet',
-          title: title.replace(/^[*_~`]+|[*_~`]+$/g, '').trim(),
-          rawLines: remainder ? [remainder] : []
         }
-      } else {
-        const colonIndex = fullText.indexOf(':')
-        if (colonIndex > 0 && colonIndex < 55) {
-          title = fullText.slice(0, colonIndex).trim()
-          const remainder = fullText.slice(colonIndex + 1).trim()
-          currentItem = {
-            type: 'bullet',
-            title: title.replace(/^[*_~`]+|[*_~`]+$/g, '').trim(),
-            rawLines: remainder ? [remainder] : []
+
+        children.push(conceptNode)
+        lastConceptNode = conceptNode
+      }
+    } else if (block.type === 'table') {
+      const rows = block.lines.map((row) =>
+        row
+          .split('|')
+          .map((cell) => cell.trim())
+          .filter((_c, idx, arr) => idx > 0 && idx < arr.length - 1)
+      )
+
+      const headers = rows[0] || []
+      const dataRows = rows.slice(1).filter((r) => !r.every((c) => /^[-:\s]+$/.test(c)))
+
+      if (dataRows.length > 0) {
+        const tableParent = lastConceptNode || parentNode
+        if (lastConceptNode) {
+          lastConceptNode.isLeaf = false
+        }
+
+        const firstColHeader = headers[0] || 'Tabla'
+        const containerLabel = stripMarkdownDecorations(firstColHeader) || 'Tabla'
+        const containerContent = `### ${containerLabel}\n\nTabla comparativa de ${containerLabel}.`
+        const containerStats = calculateReadingStats(containerContent)
+
+        const containerNode: ParsedNode = {
+          id: generateNodeId(`${tableParent.id}-tbl-${childCounter++}`, baseIndex + childCounter),
+          label: containerLabel,
+          level: Math.min(6, tableParent.level + 1),
+          content: containerContent,
+          parentId: tableParent.id,
+          children: [],
+          wordCount: containerStats.wordCount,
+          readingTimeMinutes: containerStats.readingTimeMinutes,
+          islandIndex: tableParent.islandIndex,
+          isLeaf: false
+        }
+
+        for (const row of dataRows) {
+          if (row.length === 0) continue
+          const rawLabel = row[0] || ''
+          const cleanLabel = stripMarkdownDecorations(rawLabel)
+          if (!cleanLabel) continue
+
+          const detailLines: string[] = []
+          const attrNodes: ParsedNode[] = []
+
+          for (let c = 1; c < row.length; c++) {
+            const colHeader = stripMarkdownDecorations(headers[c] || `Columna ${c + 1}`)
+            const colVal = (row[c] || '').trim()
+            if (colVal) {
+              detailLines.push(`- **${colHeader}:** ${colVal}`)
+              const attrLabel = `${colHeader}: ${colVal}`
+              const attrContent = `### ${colHeader}\n\n**${colHeader}:** ${colVal}`
+              const attrStats = calculateReadingStats(attrContent)
+
+              attrNodes.push({
+                id: generateNodeId(`${cleanLabel}-c-${childCounter++}`, baseIndex + childCounter),
+                label: attrLabel,
+                level: Math.min(6, containerNode.level + 2),
+                content: attrContent,
+                parentId: '', // set after rowNode is instantiated
+                children: [],
+                wordCount: attrStats.wordCount,
+                readingTimeMinutes: attrStats.readingTimeMinutes,
+                islandIndex: containerNode.islandIndex,
+                isLeaf: true
+              })
+            }
           }
+
+          const rowContent = detailLines.length > 0 ? `### ${cleanLabel}\n\n${detailLines.join('\n')}` : `### ${cleanLabel}`
+          const rowStats = calculateReadingStats(rowContent)
+
+          const rowNode: ParsedNode = {
+            id: generateNodeId(`${cleanLabel}-r-${childCounter++}`, baseIndex + childCounter),
+            label: cleanLabel,
+            level: Math.min(6, containerNode.level + 1),
+            content: rowContent,
+            parentId: containerNode.id,
+            children: [],
+            wordCount: rowStats.wordCount,
+            readingTimeMinutes: rowStats.readingTimeMinutes,
+            islandIndex: containerNode.islandIndex,
+            isLeaf: attrNodes.length === 0
+          }
+
+          for (const attrNode of attrNodes) {
+            attrNode.parentId = rowNode.id
+            rowNode.children.push(attrNode)
+          }
+
+          containerNode.children.push(rowNode)
+        }
+
+        if (tableParent === parentNode) {
+          children.push(containerNode)
         } else {
-          if (fullText.length > 55) {
-            title = fullText.slice(0, 50) + '...'
-          }
-          currentItem = {
-            type: 'bullet',
-            title: title.replace(/^[*_~`]+|[*_~`]+$/g, '').trim(),
-            rawLines: [fullText]
-          }
+          tableParent.children.push(containerNode)
         }
-      }
-    } else if (standaloneBoldMatch) {
-      if (currentItem) items.push(currentItem)
-      currentItem = {
-        type: 'standalone_bold',
-        title: standaloneBoldMatch[2].trim().replace(/^[*_~`]+|[*_~`]+$/g, ''),
-        rawLines: []
-      }
-    } else if (boldWithBodyMatch) {
-      if (currentItem) items.push(currentItem)
-      currentItem = {
-        type: 'bold_with_body',
-        title: boldWithBodyMatch[2].trim().replace(/^[*_~`]+|[*_~`]+$/g, ''),
-        rawLines: [(boldWithBodyMatch[3] || '').trim()]
-      }
-    } else if (colonMatch) {
-      if (currentItem) items.push(currentItem)
-      currentItem = {
-        type: 'colon_lead',
-        title: colonMatch[1].trim(),
-        rawLines: [trimmed]
-      }
-    } else {
-      // Plain text line
-      if (currentItem) {
-        currentItem.rawLines.push(trimmed)
-      } else {
-        currentItem = {
-          type: 'intro',
-          title: '',
-          rawLines: [trimmed]
-        }
+
+        lastConceptNode = null
       }
     }
-  }
-  if (currentItem) items.push(currentItem)
-
-  // 3. Detect converted table column headers:
-  // Identified by consecutive standalone_bold items with 0 rawLines
-  let tableHeaders: string[] = []
-  let itemStartIndex = 0
-
-  while (itemStartIndex < items.length && items[itemStartIndex].type === 'intro') {
-    itemStartIndex++
-  }
-
-  let emptyBoldCount = 0
-  while (
-    itemStartIndex + emptyBoldCount < items.length &&
-    items[itemStartIndex + emptyBoldCount].type === 'standalone_bold' &&
-    items[itemStartIndex + emptyBoldCount].rawLines.length === 0
-  ) {
-    emptyBoldCount++
-  }
-
-  if (emptyBoldCount >= 2 && emptyBoldCount <= 5) {
-    tableHeaders = items
-      .slice(itemStartIndex, itemStartIndex + emptyBoldCount)
-      .map((it) => it.title)
-    itemStartIndex += emptyBoldCount
-  }
-
-  // 4. Create child nodes
-  for (let i = itemStartIndex; i < items.length; i++) {
-    const item = items[i]
-    if (item.type === 'intro' || !item.title) continue
-
-    let formattedBody = ''
-
-    if (item.type === 'standalone_bold' && tableHeaders.length >= 2 && item.rawLines.length > 0) {
-      const colNames =
-        tableHeaders.length === item.rawLines.length + 1
-          ? tableHeaders.slice(1)
-          : tableHeaders
-
-      formattedBody = item.rawLines
-        .map((text, idx) => {
-          const colName = colNames[idx] || `Detalle ${idx + 1}`
-          return `- **${colName}:** ${text}`
-        })
-        .join('\n\n')
-    } else if (item.rawLines.length > 0) {
-      formattedBody = item.rawLines.join('\n\n')
-    }
-
-    const fullContent = formattedBody ? `### ${item.title}\n\n${formattedBody}` : `### ${item.title}`
-    const stats = calculateReadingStats(fullContent)
-
-    children.push({
-      id: generateNodeId(`${parentNode.id}-p-${childCounter++}`, baseIndex + childCounter),
-      label: item.title,
-      level: Math.min(6, parentNode.level + 1),
-      content: fullContent,
-      parentId: parentNode.id,
-      children: [],
-      wordCount: stats.wordCount,
-      readingTimeMinutes: stats.readingTimeMinutes,
-      islandIndex: parentNode.islandIndex,
-      isLeaf: true
-    })
-  }
-
-  const introLines: string[] = []
-  for (let i = 0; i < itemStartIndex; i++) {
-    introLines.push(...items[i].rawLines)
   }
 
   return { children, introLines }
@@ -312,7 +463,7 @@ export function parseMarkdown(
     if (hashMatch) {
       if (currentSection) {
         sections.push(currentSection)
-      } else if (introLines.length > 0) {
+      } else if (introLines.some((l) => l.trim().length > 0)) {
         sections.push({ level: 1, label: defaultTitle, lines: introLines })
         introLines = []
       }
@@ -333,7 +484,7 @@ export function parseMarkdown(
 
       if (currentSection) {
         sections.push(currentSection)
-      } else if (introLines.length > 0) {
+      } else if (introLines.some((l) => l.trim().length > 0)) {
         sections.push({ level: 1, label: defaultTitle, lines: introLines })
         introLines = []
       }
@@ -354,7 +505,7 @@ export function parseMarkdown(
 
   if (currentSection) {
     sections.push(currentSection)
-  } else if (introLines.length > 0) {
+  } else if (introLines.some((l) => l.trim().length > 0)) {
     sections.push({ level: 1, label: defaultTitle, lines: introLines })
   }
 
@@ -382,6 +533,8 @@ export function parseMarkdown(
 
   if (h1Count === 1 && sections[0].level === 1) {
     const h1Section = sections[0]
+    const firstLineIsHeading = /^#{1,6}\s+/.test(h1Section.lines[0]?.trim() || '')
+    const bodyLines = firstLineIsHeading ? h1Section.lines.slice(1) : h1Section.lines
     const content = h1Section.lines.join('\n').trim()
     const stats = calculateReadingStats(content)
 
@@ -397,6 +550,28 @@ export function parseMarkdown(
       islandIndex: 0
     }
     processedSections = sections.slice(1)
+
+    // If root section has definition paragraphs or bullet items, extract them as children
+    if (bodyLines.length > 0) {
+      const { children: paragraphNodes, introLines: parentIntroLines } = extractParagraphAndBulletSubnodes(
+        rootNode,
+        bodyLines,
+        10
+      )
+      if (paragraphNodes.length > 0) {
+        paragraphNodes.forEach((child) => {
+          propagateIslandAndLevels(child, islandCounter++, 2)
+        })
+        rootNode.children.push(...paragraphNodes)
+        const parentIntro = (firstLineIsHeading ? [h1Section.lines[0], ...parentIntroLines] : parentIntroLines)
+          .join('\n')
+          .trim()
+        rootNode.content = parentIntro || rootNode.content
+        const introStats = calculateReadingStats(rootNode.content)
+        rootNode.wordCount = introStats.wordCount
+        rootNode.readingTimeMinutes = introStats.readingTimeMinutes
+      }
+    }
   } else {
     const derivedTitle = defaultTitle.replace(/\.(md|txt)$/i, '')
     rootNode = {
@@ -443,11 +618,8 @@ export function parseMarkdown(
       isLeaf: sec.level >= 4
     }
 
-    // Extract bullet items or paragraph titles under this section
-    const hasNextSubheading =
-      i + 1 < processedSections.length && processedSections[i + 1].level > sec.level
-
-    if (!hasNextSubheading && sec.lines.length > 1) {
+    // Extract bullet items, definitions, or tables directly under this section
+    if (sec.lines.length > 1) {
       const { children: paragraphNodes, introLines } = extractParagraphAndBulletSubnodes(
         node,
         sec.lines.slice(1),
@@ -455,6 +627,7 @@ export function parseMarkdown(
       )
       if (paragraphNodes.length > 0) {
         node.children.push(...paragraphNodes)
+        node.isLeaf = false
         const parentIntro = [sec.lines[0], ...introLines].join('\n').trim()
         node.content = parentIntro
         const introStats = calculateReadingStats(parentIntro)
